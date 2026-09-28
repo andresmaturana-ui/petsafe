@@ -28,13 +28,17 @@ La cámara y las notificaciones requieren HTTPS (o `localhost`). Al hacer push a
 
 ## Estado del prototipo
 
-- **Reconocimiento facial**: MobileNet v2 (TensorFlow.js) genera una huella numérica de la cara en el propio
-  celular y se compara por similitud (`src/biometrics.js`). Cada captura pasa un control de luz, nitidez y
-  "¿es una mascota?"; al final se revisa que las 5 sean del mismo animal, y la búsqueda compara contra
-  cada ángulo guardado. También se guarda una foto de la nariz (opcional): si las narices se parecen mucho,
-  alcanza con una cara algo menos parecida. Es un modelo genérico: sirve para probar el flujo,
-  pero para producción conviene entrenar uno específico de caras de perros y gatos. Si el modelo no se puede
-  descargar, se usa un descriptor simple de color (mucho menos preciso).
+- **Reconocimiento facial** (`src/biometrics.js`), en el propio celular con transformers.js:
+  1. *Detección*: YOLOS-tiny (COCO) encuentra al perro o gato y se recorta a su alrededor.
+  2. *Huella*: DINOv2-small convierte el recorte en un vector de 384 números (token CLS, con la imagen y su espejo).
+  3. *Búsqueda*: similitud coseno con pgvector en Supabase (o en el navegador en modo local), contra cada ángulo guardado.
+
+  Cada captura pasa un control de luz, nitidez y "¿es una mascota?"; al final se revisa que las 5 sean del mismo
+  animal. También se guarda una foto de la nariz (opcional): si las narices se parecen mucho, alcanza con una cara
+  algo menos parecida. Los modelos (~40 MB) se descargan la primera vez. El umbral de DINOv2 (0.78) es inicial y
+  hay que calibrarlo con pruebas reales. Próximos pasos: detector de cabeza entrenado (YOLO sobre Oxford-IIIT Pet) y
+  ajuste fino con metric learning (ArcFace). Si los modelos no se pueden descargar, se usa un descriptor simple de
+  color (mucho menos preciso).
 - **Datos**: con Supabase configurado (`VITE_SUPABASE_URL` y `VITE_SUPABASE_KEY` en `.env.production`) se
   comparten entre celulares (`src/data-remote.js`); si no, se guardan en el navegador (IndexedDB,
   `src/data-local.js`) y en *Perfil → Agregar otro usuario* se simula al dueño y a quien encuentra en un mismo celular.

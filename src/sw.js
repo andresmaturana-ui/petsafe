@@ -7,10 +7,11 @@ import { ExpirationPlugin } from 'workbox-expiration';
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
-// Pesos del modelo de reconocimiento y teselas del mapa.
+// Motor de reconocimiento (transformers.js y ONNX Runtime) y teselas del mapa.
+// Los pesos de los modelos los guarda transformers.js en su propio caché.
 registerRoute(
-  ({ url }) => /tfhub\.dev|kaggle|storage\.googleapis\.com/.test(url.host),
-  new CacheFirst({ cacheName: 'model', plugins: [new ExpirationPlugin({ maxEntries: 40 })] }),
+  ({ url }) => url.host === 'cdn.jsdelivr.net' && /@huggingface\/transformers@|onnxruntime-web@/.test(url.pathname),
+  new CacheFirst({ cacheName: 'model', plugins: [new ExpirationPlugin({ maxEntries: 20 })] }),
 );
 registerRoute(
   ({ url }) => url.host.endsWith('tile.openstreetmap.org'),

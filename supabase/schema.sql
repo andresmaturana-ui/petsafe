@@ -41,6 +41,8 @@ create table if not exists public.pet_samples (
 create index if not exists pet_samples_pet on public.pet_samples (pet_id);
 -- 'face' (cara) o 'nose' (nariz, huella nasal).
 alter table public.pet_samples add column if not exists kind text not null default 'face';
+-- Huella DINOv2 (vector de 384 números).
+alter table public.pet_samples add column if not exists dino extensions.vector(384);
 
 create table if not exists public.found_reports (
   id uuid primary key default gen_random_uuid(),
@@ -64,6 +66,7 @@ create table if not exists public.found_samples (
 );
 create index if not exists found_samples_found on public.found_samples (found_id);
 alter table public.found_samples add column if not exists kind text not null default 'face';
+alter table public.found_samples add column if not exists dino extensions.vector(384);
 
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
@@ -114,12 +117,18 @@ begin
   return is_admin();
 end $$;
 
--- Convierte la plantilla que arma la app ({ mobilenet: {vector, samples}, basic: {...} })
--- en filas: el promedio y cada captura.
-create or replace function public.samples_from(bio jsonb)
-returns table (mobilenet extensions.vector, basic extensions.vector)
+-- Convierte la plantilla que arma la app ({ dino: {vector, samples}, basic: {...}, nose: {...} })
+-- en filas: el promedio y cada captura, de la cara y de la nariz.
+drop function if exists public.pet_scores(jsonb);
+drop function if exists public.bio_samples(jsonb);
+drop function if exists public.samples_from(jsonb);
+create function public.samples_from(bio jsonb)
+returns table (dino extensions.vector, mobilenet extensions.vector, basic extensions.vector)
 language sql immutable set search_path = public, extensions as $$
   select
+    case when jsonb_typeof(bio -> 'dino') = 'object'
+      then (case when i = 0 then bio -> 'dino' -> 'vector' else bio -> 'dino' -> 'samples' -> (i - 1) end)::text::vector
+    end,
     case when jsonb_typeof(bio -> 'mobilenet') = 'object'
       then (case when i = 0 then bio -> 'mobilenet' -> 'vector' else bio -> 'mobilenet' -> 'samples' -> (i - 1) end)::text::vector
     end,
@@ -127,46 +136,55 @@ language sql immutable set search_path = public, extensions as $$
   from generate_series(0, jsonb_array_length(coalesce(bio -> 'basic' -> 'samples', '[]'::jsonb))) as i;
 $$;
 
--- Cara y nariz como filas con su tipo.
-create or replace function public.bio_samples(bio jsonb)
-returns table (kind text, mobilenet extensions.vector, basic extensions.vector)
+create function public.bio_samples(bio jsonb)
+returns table (kind text, dino extensions.vector, mobilenet extensions.vector, basic extensions.vector)
 language sql immutable set search_path = public, extensions as $$
-  select 'face', s.mobilenet, s.basic from samples_from(bio) s
+  select 'face', s.dino, s.mobilenet, s.basic from samples_from(bio) s
   union all
-  select 'nose', s.mobilenet, s.basic from samples_from(bio -> 'nose') s
+  select 'nose', s.dino, s.mobilenet, s.basic from samples_from(bio -> 'nose') s
   where jsonb_typeof(bio -> 'nose') = 'object';
 $$;
 
--- Mismos umbrales que src/biometrics.js.
+-- Mismos umbrales que src/biometrics.js. dino es un valor inicial a calibrar;
+-- mobilenet queda para registros antiguos.
+create or replace function public.face_threshold(model text) returns real
+language sql immutable as $$
+  select (case model when 'dino' then 0.78 when 'mobilenet' then 0.8 else 0.92 end)::real;
+$$;
+
 create or replace function public.is_match(score real, model text) returns boolean
 language sql immutable as $$
-  select score >= case model when 'mobilenet' then 0.8 else 0.92 end;
+  select score >= face_threshold(model);
 $$;
 
 -- La cara decide; si las narices se parecen mucho, basta con una cara algo
 -- menos parecida (por ejemplo, encontrada de lado). Igual que compare() en la app.
 create or replace function public.is_pet_match(score real, model text, nose real) returns boolean
 language sql immutable as $$
-  select is_match(score, model) or (model = 'mobilenet' and nose >= 0.85 and score >= 0.8 - 0.1);
+  select is_match(score, model) or (model <> 'basic' and nose >= 0.85 and score >= face_threshold(model) - 0.1);
 $$;
 
--- Parecido de una plantilla con cada mascota registrada (mejor par de capturas).
--- nose: parecido de las narices (MobileNet), nulo si falta alguna.
-drop function if exists public.pet_scores(jsonb);
+-- Parecido de una plantilla con cada mascota registrada (mejor par de capturas),
+-- con el mejor descriptor que tengan las dos. nose: parecido de las narices con
+-- ese mismo descriptor, nulo si falta alguna.
 create function public.pet_scores(bio jsonb)
 returns table (pet_id uuid, score real, model text, nose real)
 language sql stable security definer set search_path = public, extensions as $$
   with q as (select * from bio_samples(bio)),
   s as (
     select ps.pet_id,
-      max(1 - (q.mobilenet <=> ps.mobilenet)) filter (where q.kind = 'face' and q.mobilenet is not null and ps.mobilenet is not null) as m,
+      max(1 - (q.dino <=> ps.dino)) filter (where q.kind = 'face') as d,
+      max(1 - (q.mobilenet <=> ps.mobilenet)) filter (where q.kind = 'face') as m,
       max(1 - (q.basic <=> ps.basic)) filter (where q.kind = 'face') as b,
-      max(1 - (q.mobilenet <=> ps.mobilenet)) filter (where q.kind = 'nose' and q.mobilenet is not null and ps.mobilenet is not null) as n
+      max(1 - (q.dino <=> ps.dino)) filter (where q.kind = 'nose') as nd,
+      max(1 - (q.mobilenet <=> ps.mobilenet)) filter (where q.kind = 'nose') as nm
     from pet_samples ps join q on q.kind = ps.kind
     group by ps.pet_id
   )
-  select pet_id, coalesce(m, b)::real, case when m is not null then 'mobilenet' else 'basic' end, n::real
-  from s where coalesce(m, b) is not null;
+  select pet_id, coalesce(d, m, b)::real,
+    case when d is not null then 'dino' when m is not null then 'mobilenet' else 'basic' end,
+    (case when d is not null then nd when m is not null then nm end)::real
+  from s where coalesce(d, m, b) is not null;
 $$;
 revoke execute on function public.pet_scores(jsonb) from public, anon, authenticated;
 
@@ -182,8 +200,8 @@ begin
   insert into pets (owner_id, name, owner_name, diseases, vaccines, photo)
   values (auth.uid(), p_name, p_owner_name, coalesce(p_diseases, ''), coalesce(p_vaccines, ''), p_photo)
   returning id into new_id;
-  insert into pet_samples (pet_id, kind, mobilenet, basic)
-  select new_id, s.kind, s.mobilenet, s.basic from bio_samples(p_bio) s;
+  insert into pet_samples (pet_id, kind, dino, mobilenet, basic)
+  select new_id, s.kind, s.dino, s.mobilenet, s.basic from bio_samples(p_bio) s;
   return new_id;
 end $$;
 
@@ -201,8 +219,8 @@ begin
 
   insert into found_reports (finder_id, finder_name, finder_phone, photo, lat, lng)
   values (auth.uid(), p_name, p_phone, p_photo, p_lat, p_lng) returning id into r_id;
-  insert into found_samples (found_id, kind, mobilenet, basic)
-  select r_id, s.kind, s.mobilenet, s.basic from bio_samples(p_bio) s;
+  insert into found_samples (found_id, kind, dino, mobilenet, basic)
+  select r_id, s.kind, s.dino, s.mobilenet, s.basic from bio_samples(p_bio) s;
 
   create temp table if not exists _scores (pet_id uuid, score real, model text, nose real) on commit drop;
   delete from _scores;
@@ -244,17 +262,21 @@ begin
   with ps as (select * from pet_samples where pet_id = p_pet),
   s as (
     select fs.found_id,
-      max(1 - (ps.mobilenet <=> fs.mobilenet)) filter (where fs.kind = 'face' and ps.mobilenet is not null and fs.mobilenet is not null) as m,
+      max(1 - (ps.dino <=> fs.dino)) filter (where fs.kind = 'face') as d,
+      max(1 - (ps.mobilenet <=> fs.mobilenet)) filter (where fs.kind = 'face') as m,
       max(1 - (ps.basic <=> fs.basic)) filter (where fs.kind = 'face') as b,
-      max(1 - (ps.mobilenet <=> fs.mobilenet)) filter (where fs.kind = 'nose' and ps.mobilenet is not null and fs.mobilenet is not null) as n
+      max(1 - (ps.dino <=> fs.dino)) filter (where fs.kind = 'nose') as nd,
+      max(1 - (ps.mobilenet <=> fs.mobilenet)) filter (where fs.kind = 'nose') as nm
     from found_samples fs
     join found_reports fr on fr.id = fs.found_id and fr.status = 'open' and (fr.pet_id is null or fr.pet_id = p_pet)
     join ps on ps.kind = fs.kind
     group by fs.found_id
   )
   select found_id into f_id from s
-  where is_pet_match(coalesce(m, b)::real, case when m is not null then 'mobilenet' else 'basic' end, n::real)
-  order by coalesce(m, b) desc limit 1;
+  where is_pet_match(coalesce(d, m, b)::real,
+    case when d is not null then 'dino' when m is not null then 'mobilenet' else 'basic' end,
+    (case when d is not null then nd when m is not null then nm end)::real)
+  order by coalesce(d, m, b) desc limit 1;
 
   if f_id is not null then
     update found_reports set pet_id = p_pet where id = f_id;

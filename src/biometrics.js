@@ -1,43 +1,72 @@
 // Biometría facial de mascotas (PROTOTIPO).
 //
+// 1. Detección: un detector de objetos (YOLOS-tiny, entrenado en COCO) busca
+//    al perro o gato en la foto para recortar alrededor de él.
+// 2. Huella: DINOv2-small convierte el recorte en un vector de 384 números.
+//    Dos fotos de la misma mascota producen vectores parecidos (similitud
+//    coseno). Funciona sin entrenamiento extra; más adelante se puede ajustar
+//    con metric learning (ArcFace) sobre fotos de mascotas.
+// 3. Búsqueda: los vectores se comparan en la base con pgvector
+//    (supabase/schema.sql) o en el celular en modo local.
+//
+// Los modelos corren en el celular con transformers.js y se descargan una vez
+// (unos 35 MB) y quedan guardados. Si no se pueden descargar, se usa un
+// descriptor simple de color y textura para que la app siga funcionando.
+//
 // Además de la cara se puede guardar una foto de la nariz: sus pliegues son
 // únicos en cada perro, como una huella digital.
-//
-// Se usa MobileNet v2 (TensorFlow.js) en el navegador para convertir la foto
-// de la cara de la mascota en un vector numérico ("embedding"). Dos fotos de
-// la misma mascota producen vectores parecidos; se comparan con similitud
-// coseno. Si el modelo no se puede descargar, se usa un descriptor simple de
-// color y textura para que la app siga funcionando.
-//
-// Un modelo entrenado específicamente para caras de perros y gatos mejoraría
-// mucho la precisión; basta con reemplazar `embed()` manteniendo la interfaz.
 
 export const SIZE = 224;
 
-// Umbral de coincidencia. Se compara contra la captura más parecida, por eso es
-// algo más exigente que un promedio simple.
-const THRESHOLDS = { mobilenet: 0.8, basic: 0.92 };
+// Umbral de coincidencia de la cara, contra la captura más parecida.
+// dino: valor inicial, a calibrar con pruebas reales. mobilenet: registros
+// antiguos. Mismos valores que face_threshold() en supabase/schema.sql.
+const THRESHOLDS = { dino: 0.78, mobilenet: 0.8, basic: 0.92 };
 
-let modelPromise;
+const TRANSFORMERS = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js';
+const MODEL_OPTIONS = { dtype: 'q8', device: 'wasm' };
 
-function loadModel() {
-  if (!modelPromise) {
-    modelPromise = (async () => {
-      const [tf, mobilenet] = await Promise.all([
-        import('@tensorflow/tfjs'),
-        import('@tensorflow-models/mobilenet'),
-      ]);
-      await tf.ready();
-      const model = await withTimeout(mobilenet.load({ version: 2, alpha: 1.0 }), 60000);
-      return { tf, model };
-    })().catch((err) => {
-      console.warn('MobileNet no disponible, se usa el descriptor básico', err);
-      modelPromise = null; // se reintenta en la próxima captura
-      return null;
-    });
-  }
-  return modelPromise;
+let libPromise, dinoPromise, detectorPromise;
+
+function lib() {
+  libPromise ??= import(/* @vite-ignore */ TRANSFORMERS).then(
+    (t) => {
+      t.env.allowLocalModels = false;
+      return t;
+    },
+    (err) => {
+      libPromise = null; // se reintenta en la próxima captura
+      throw err;
+    },
+  );
+  return libPromise;
 }
+
+// Descarga en curso: bytes por archivo, para mostrar el avance.
+const downloads = new Map();
+function progress(info) {
+  if (info.status !== 'progress' || !info.total) return;
+  downloads.set(info.file + info.name, [info.loaded, info.total]);
+  let loaded = 0, total = 0;
+  for (const [l, t] of downloads.values()) { loaded += l; total += t; }
+  window.dispatchEvent(new CustomEvent('petsafe:model-progress', { detail: { loaded, total } }));
+}
+
+// Carga un modelo una sola vez; si falla se reintenta en la próxima captura.
+function load(get, set, task, model) {
+  if (!get()) {
+    set(
+      withTimeout(lib().then((t) => t.pipeline(task, model, { ...MODEL_OPTIONS, progress_callback: progress })), 180000).catch((err) => {
+        console.warn(`${model} no disponible`, err);
+        set(null);
+        return null;
+      }),
+    );
+  }
+  return get();
+}
+const dino = () => load(() => dinoPromise, (p) => (dinoPromise = p), 'image-feature-extraction', 'Xenova/dinov2-small');
+const detector = () => load(() => detectorPromise, (p) => (detectorPromise = p), 'object-detection', 'Xenova/yolos-tiny');
 
 function withTimeout(promise, ms) {
   return Promise.race([
@@ -46,44 +75,59 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-/** Empieza a descargar el modelo en segundo plano. */
+/** Empieza a descargar los modelos en segundo plano. */
 export function warmUp() {
-  loadModel();
+  dino();
+  detector();
 }
 
-// Índices ImageNet: perros 151-268, lobos/zorros 269-280, gatos 281-293.
-const isPetClass = (i) => i >= 151 && i <= 293;
+/**
+ * Busca un perro o gato en la imagen. Devuelve la caja más segura
+ * { x, y, w, h } en píxeles, false si no hay ninguno, o null si el detector
+ * no está disponible.
+ */
+export async function locatePet(canvas) {
+  const [t, det] = await Promise.all([lib().catch(() => null), detector()]);
+  if (!t || !det) return null;
+  const found = (await det(t.RawImage.fromCanvas(canvas), { threshold: 0.5 }))
+    .filter((d) => d.label === 'dog' || d.label === 'cat')
+    .sort((a, b) => b.score - a.score)[0];
+  if (!found) return false;
+  const { xmin, ymin, xmax, ymax } = found.box;
+  return { x: xmin, y: ymin, w: xmax - xmin, h: ymax - ymin };
+}
 
 /**
  * Calcula la huella de una imagen cuadrada (canvas SIZE x SIZE).
- * Siempre incluye el descriptor básico y, si el modelo cargó, el de MobileNet;
+ * Siempre incluye el descriptor básico y, si el modelo cargó, el de DINOv2;
  * así dos huellas siempre se pueden comparar aunque una se haya tomado sin
- * conexión. Devuelve { mobilenet, basic, looksLikePet } (looksLikePet es null
- * si no se sabe).
+ * conexión. Devuelve { dino, basic }.
  */
 export async function embed(canvas) {
   const basic = normalize(basicDescriptor(canvas));
-  const loaded = await loadModel();
-  if (!loaded) return { mobilenet: null, basic, looksLikePet: null };
-  const { tf, model } = loaded;
-  // Se promedia la imagen con su espejo: la huella queda estable aunque la
+  const [t, model] = await Promise.all([lib().catch(() => null), dino()]);
+  if (!t || !model) return { dino: null, basic };
+  // Se suma la imagen con su espejo: la huella queda estable aunque la
   // mascota gire un poco la cabeza.
-  const { vector, logits } = tf.tidy(() => {
-    const img = tf.browser.fromPixels(canvas);
-    const flipped = tf.reverse(img, 1);
-    const emb = tf.add(model.infer(img, true), model.infer(flipped, true));
-    const log = model.infer(img, false);
-    return { vector: emb.dataSync().slice(), logits: log.dataSync().slice() };
-  });
-  // MobileNet v2 tiene 1001 clases (la 0 es "fondo").
-  const offset = logits.length === 1001 ? 1 : 0;
-  const top = [...logits.keys()].sort((a, b) => logits[b] - logits[a]).slice(0, 5);
-  return { mobilenet: normalize(Array.from(vector)), basic, looksLikePet: top.some((i) => isPetClass(i - offset)) };
+  const flipped = document.createElement('canvas');
+  flipped.width = flipped.height = SIZE;
+  const ctx = flipped.getContext('2d');
+  ctx.scale(-1, 1);
+  ctx.drawImage(canvas, -SIZE, 0);
+  const a = cls(await model(t.RawImage.fromCanvas(canvas)));
+  const b = cls(await model(t.RawImage.fromCanvas(flipped)));
+  return { dino: normalize(a.map((v, i) => v + b[i])), basic };
 }
 
-const MODELS = ['mobilenet', 'basic'];
+// Vector del token [CLS] (el primero) de la última capa.
+function cls(tensor) {
+  const d = tensor.dims[tensor.dims.length - 1];
+  return Array.from(tensor.data.slice(0, d));
+}
 
-/** El descriptor que tienen todas las huellas: MobileNet si se puede. */
+const MODELS = ['dino', 'mobilenet', 'basic'];
+
+/** El mejor descriptor que tienen todas las huellas. */
 function commonModel(items) {
   return MODELS.find((m) => items.every((x) => x?.[m])) || null;
 }
@@ -147,8 +191,8 @@ export function compare(a, b) {
   b = upgrade(b);
   const face = compareFace(a, b);
   const nose = a?.nose && b?.nose ? compareFace(a.nose, b.nose) : null;
-  const noseHelps = nose?.model === 'mobilenet' && face.model === 'mobilenet' &&
-    nose.score >= NOSE.threshold && face.score >= THRESHOLDS.mobilenet - NOSE.faceMargin;
+  const noseHelps = nose && nose.model === face.model && face.model !== 'basic' &&
+    nose.score >= NOSE.threshold && face.score >= THRESHOLDS[face.model] - NOSE.faceMargin;
   return { ...face, match: face.match || noseHelps, nose: nose && nose.score };
 }
 
@@ -171,7 +215,7 @@ export function consistency(embeddings) {
 }
 
 // Solo detecta errores gruesos (otro animal, foto equivocada).
-const CONSISTENCY_MIN = { mobilenet: 0.6, basic: 0.6 };
+const CONSISTENCY_MIN = { dino: 0.5, mobilenet: 0.6, basic: 0.6 };
 
 /**
  * Revisa luz y nitidez de una captura. Una nariz negra de cerca es oscura por
