@@ -1,0 +1,33 @@
+{
+  "name": "petsafe",
+  "version": "1.0.0",
+  "description": "App para registrar mascotas y encontrarlas cuando se pierden.",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andresmaturana-ui/petsafe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/andresmaturana-ui/petsafe/issues"
+  },
+  "homepage": "https://github.com/andresmaturana-ui/petsafe#readme",
+  "dependencies": {
+    "@tensorflow-models/mobilenet": "^2.1.1",
+    "@tensorflow/tfjs": "^4.22.0",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "vite": "^6.4.3",
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-expiration": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1"
+  },
+  "private": true,
+  "type": "module"
+}
