@@ -190,9 +190,16 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     const nose = kindAt(next()) === 'nose';
     const zoom = nose ? NOSE_ZOOM : 0.8;
     for (let i = 0; i < (nose ? 6 : 3); i++) {
-      const frame = snapshot(video, video.videoWidth, video.videoHeight, nose ? Infinity : FRAME);
-      const { sharpness } = quality(centerCrop(frame, zoom));
-      if (!best || sharpness > best.sharpness) best = { frame, sharpness };
+      const frame = snapshot(video, video.videoWidth, video.videoHeight, nose ? NOSE_FRAME : FRAME);
+      const crop = centerCrop(frame, zoom);
+      const { sharpness } = quality(crop);
+      release(crop);
+      if (!best || sharpness > best.sharpness) {
+        if (best) release(best.frame);
+        best = { frame, sharpness };
+      } else {
+        release(frame);
+      }
       await new Promise((r) => setTimeout(r, 120));
     }
     return best.frame;
@@ -209,6 +216,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
       return await analyze(frame, zoom, nose);
     } finally {
       analyzing = false;
+      release(frame);
     }
   }
 
@@ -219,11 +227,13 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     const canvas = box ? cropAround(frame, box) : centerCrop(frame, nose ? NOSE_ZOOM : zoom);
     const q = quality(canvas, { nose });
     if (!q.ok) {
+      release(canvas);
       status.textContent = `⚠️ ${q.problem} Intenta de nuevo.`;
       return false;
     }
     const emb = await embed(canvas);
     const shot = { photo: canvas.toDataURL('image/jpeg', 0.85), emb, q, looksLikePet: box === null ? null : !!box };
+    release(canvas);
     if (box === false) {
       const keep = await askKeep('No logramos ver bien a una mascota en esta captura. Acércate más a su cara.');
       if (!keep) {
@@ -289,7 +299,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     btn.disabled = true;
     for (const f of [...file.files].slice(0, total - count())) {
       const img = await loadImage(URL.createObjectURL(f));
-      const max = kindAt(next()) === 'nose' ? Infinity : FRAME;
+      const max = kindAt(next()) === 'nose' ? NOSE_FRAME : FRAME;
       if (await consider(snapshot(img, img.naturalWidth, img.naturalHeight, max), 1)) await afterShot();
       if (next() === -1) break;
     }
@@ -363,6 +373,15 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
 
 // Copia la imagen completa (cámara o foto) a un canvas de hasta `max` px.
 const FRAME = 1024;
+// La nariz se recorta al 60% del lado corto, así que 2048 px ya dejan el
+// recorte en ~700 px, más que los 224 que usa la huella. Más grande (4K o
+// fotos de 12 a 48 MP) llenaba la memoria del iPhone y cerraba la página.
+const NOSE_FRAME = 2048;
+
+// En iPhone la memoria de los canvas se libera recién al achicarlos a 0.
+function release(canvas) {
+  canvas.width = canvas.height = 0;
+}
 function snapshot(source, w, h, max = FRAME) {
   const k = Math.min(1, max / Math.max(w, h));
   const canvas = document.createElement('canvas');
@@ -389,8 +408,10 @@ function cropAround(frame, { x, y, w, h, head }) {
 function square(frame, sx, sy, side) {
   // Al achicar mucho de una vez se pierden los detalles finos (los pliegues
   // de la nariz): se reduce a la mitad por pasos.
+  const temp = [];
   while (side > SIZE * 2) {
     frame = half(frame);
+    temp.push(frame);
     sx /= 2; sy /= 2; side /= 2;
   }
   const canvas = document.createElement('canvas');
@@ -401,6 +422,7 @@ function square(frame, sx, sy, side) {
   ctx.fillRect(0, 0, SIZE, SIZE);
   const k = SIZE / side;
   ctx.drawImage(frame, -sx * k, -sy * k, frame.width * k, frame.height * k);
+  temp.forEach(release);
   return canvas;
 }
 

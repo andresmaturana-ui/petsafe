@@ -7,8 +7,8 @@ import { ExpirationPlugin } from 'workbox-expiration';
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
-// Motor de reconocimiento (transformers.js y ONNX Runtime) y teselas del mapa.
-// Los pesos de los modelos los guarda transformers.js en su propio caché.
+// Motor de reconocimiento (ONNX Runtime) y teselas del mapa. Los modelos los
+// guarda biometrics.js en su propio caché (petsafe-models).
 registerRoute(
   ({ url }) => url.host === 'cdn.jsdelivr.net' && /@huggingface\/transformers@|onnxruntime-web@/.test(url.pathname),
   new CacheFirst({ cacheName: 'model', plugins: [new ExpirationPlugin({ maxEntries: 20 })] }),

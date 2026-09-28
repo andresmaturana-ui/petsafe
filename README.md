@@ -28,9 +28,10 @@ La cámara y las notificaciones requieren HTTPS (o `localhost`). Al hacer push a
 
 ## Estado del prototipo
 
-- **Reconocimiento facial** (`src/biometrics.js`), en el propio celular con transformers.js:
+- **Reconocimiento facial** (`src/biometrics.js`), en el propio celular con ONNX Runtime Web (un solo motor para
+  los dos modelos, para no llenar la memoria del iPhone):
   1. *Detección*: un detector YOLO11n propio (`public/models/pet-head.onnx`) encuentra la cabeza y se recorta
-     justo la cara. Si ese archivo no está o no ve una cabeza, YOLOS-tiny (COCO) busca al animal completo.
+     justo la cara. Si no ve una cabeza, avisa y deja repetir la captura.
   2. *Huella*: DINOv2-small convierte el recorte en un vector de 384 números (token CLS, con la imagen y su espejo).
   3. *Búsqueda*: similitud coseno con pgvector en Supabase (o en el navegador en modo local), contra cada ángulo guardado.
 

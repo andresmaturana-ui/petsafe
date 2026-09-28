@@ -2,8 +2,7 @@
 //
 // 1. Detección: un detector tipo YOLO entrenado para encontrar la cabeza de
 //    perros y gatos (public/models/pet-head.onnx, ver training/) recorta
-//    justo la cara. Si ese archivo no está, un detector general (YOLOS-tiny,
-//    entrenado en COCO) busca al animal completo y se recorta a su alrededor.
+//    justo la cara.
 // 2. Huella: DINOv2-small convierte el recorte en un vector de 384 números.
 //    Dos fotos de la misma mascota producen vectores parecidos (similitud
 //    coseno). Funciona sin entrenamiento extra; más adelante se puede ajustar
@@ -11,11 +10,11 @@
 // 3. Búsqueda: los vectores se comparan en la base con pgvector
 //    (supabase/schema.sql) o en el celular en modo local.
 //
-// Si hay servidor de reconocimiento (server/, VITE_BIO_SERVER), el celular le
-// envía la foto y recibe la caja y la huella, sin descargar modelos. Si no hay
-// o no responde, los modelos corren en el celular con transformers.js: se
-// descargan una vez y quedan guardados. Si no se pueden descargar, se usa un
-// descriptor simple de color y textura para que la app siga funcionando.
+// Los dos modelos corren en el celular con un solo ONNX Runtime (en iPhone la
+// memoria es justa: dos motores a la vez cerraban la página). Se descargan una
+// vez y quedan guardados. Si hay servidor de reconocimiento (server/,
+// VITE_BIO_SERVER), el celular le envía la foto y no descarga nada. Si nada
+// de eso funciona, se usa un descriptor simple de color y textura.
 //
 // Además de la cara se puede guardar una foto de la nariz: sus pliegues son
 // únicos en cada perro, como una huella digital.
@@ -29,41 +28,74 @@ export const SIZE = 224;
 // antiguos. Mismos valores que face_threshold() en supabase/schema.sql.
 const THRESHOLDS = { dino: 0.78, mobilenet: 0.8, basic: 0.92 };
 
-const TRANSFORMERS = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js';
-const MODEL_OPTIONS = { dtype: 'q8', device: 'wasm' };
+const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/';
+const HEAD_MODEL = 'models/pet-head.onnx';
+const DINO_MODEL = 'https://huggingface.co/Xenova/dinov2-small/resolve/main/onnx/model_quantized.onnx';
+const HEAD = { size: 320, threshold: 0.4 };
+const MODEL_CACHE = 'petsafe-models';
 
-let libPromise, dinoPromise, detectorPromise, headPromise;
+let ortPromise, dinoPromise, headPromise;
 
-function lib() {
-  libPromise ??= import(/* @vite-ignore */ TRANSFORMERS).then(
-    (t) => {
-      t.env.allowLocalModels = false;
-      return t;
+function runtime() {
+  ortPromise ??= import(/* @vite-ignore */ ORT + 'ort.wasm.min.mjs').then(
+    (ort) => {
+      ort.env.wasm.wasmPaths = ORT;
+      ort.env.wasm.numThreads = 1;
+      return ort;
     },
     (err) => {
-      libPromise = null; // se reintenta en la próxima captura
+      ortPromise = null; // se reintenta en la próxima captura
       throw err;
     },
   );
-  return libPromise;
+  return ortPromise;
 }
 
 // Descarga en curso: bytes por archivo, para mostrar el avance.
 const downloads = new Map();
-function progress(info) {
-  if (info.status !== 'progress' || !info.total) return;
-  downloads.set(info.file + info.name, [info.loaded, info.total]);
-  let loaded = 0, total = 0;
-  for (const [l, t] of downloads.values()) { loaded += l; total += t; }
-  window.dispatchEvent(new CustomEvent('petsafe:model-progress', { detail: { loaded, total } }));
+function progress(url, loaded, total) {
+  downloads.set(url, [loaded, total]);
+  let l = 0, t = 0;
+  for (const [a, b] of downloads.values()) { l += a; t += b; }
+  window.dispatchEvent(new CustomEvent('petsafe:model-progress', { detail: { loaded: l, total: t } }));
+}
+
+// Baja un modelo una sola vez y lo guarda en el celular. Devuelve null si
+// no existe (404 o la página de inicio en su lugar).
+async function modelBytes(url) {
+  const cache = await caches.open(MODEL_CACHE).catch(() => null);
+  let res = await cache?.match(url);
+  if (!res) {
+    res = await fetch(url);
+    if (!res.ok || /text\/html/.test(res.headers.get('content-type') || '')) return null;
+    const total = Number(res.headers.get('content-length')) || 0;
+    const reader = res.body.getReader();
+    const parts = [];
+    let loaded = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      loaded += value.length;
+      if (total) progress(url, loaded, total);
+    }
+    const blob = new Blob(parts);
+    await cache?.put(url, new Response(blob)).catch(() => {});
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 // Carga un modelo una sola vez; si falla se reintenta en la próxima captura.
-function load(get, set, task, model) {
+function session(get, set, url) {
   if (!get()) {
     set(
-      withTimeout(lib().then((t) => t.pipeline(task, model, { ...MODEL_OPTIONS, progress_callback: progress })), 180000).catch((err) => {
-        console.warn(`${model} no disponible`, err);
+      (async () => {
+        const [ort, bytes] = await Promise.all([runtime(), modelBytes(url)]);
+        if (!bytes) return null;
+        return { ort, session: await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] }) };
+      })().catch((err) => {
+        console.warn(`${url} no disponible`, err);
         set(null);
         return null;
       }),
@@ -71,28 +103,23 @@ function load(get, set, task, model) {
   }
   return get();
 }
-const dino = () => load(() => dinoPromise, (p) => (dinoPromise = p), 'image-feature-extraction', 'Xenova/dinov2-small');
-const detector = () => load(() => detectorPromise, (p) => (detectorPromise = p), 'object-detection', 'Xenova/yolos-tiny');
-
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ]);
-}
+const dino = () => session(() => dinoPromise, (p) => (dinoPromise = p), DINO_MODEL);
+const headModel = () => session(() => headPromise, (p) => (headPromise = p), HEAD_MODEL);
 
 /** Despierta el servidor o empieza a descargar los modelos en segundo plano. */
 export function warmUp() {
+  // Caché de la versión anterior (transformers.js): ya no se usa.
+  caches?.delete('transformers-cache').catch(() => {});
   server().then((up) => {
     if (up) return;
-    dino();
-    headModel().then((head) => head || detector());
+    // Uno después del otro, para no ocupar el doble de memoria a la vez.
+    headModel().then(() => dino());
   });
 }
 
 // ---------- Servidor de reconocimiento ----------
 
-// El Space gratis se duerme si nadie lo usa y tarda hasta un minuto en
+// El servidor gratis se duerme si nadie lo usa y tarda hasta un minuto en
 // despertar. Si no responde, se usa el celular y se reintenta más tarde.
 let serverPromise = null, serverDownUntil = 0;
 function server() {
@@ -126,28 +153,16 @@ async function ask(path, canvas, type = 'image/jpeg') {
   return res.json();
 }
 
-// Detector de cabezas (YOLO exportado a ONNX, una clase). Corre con el mismo
-// ONNX Runtime que usa transformers.js, así el motor se descarga una sola vez.
-const HEAD_MODEL = 'models/pet-head.onnx';
-const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/';
-const HEAD = { size: 320, threshold: 0.4 };
+// ---------- Modelos en el celular ----------
 
-function headModel() {
-  headPromise ??= (async () => {
-    const res = await fetch(HEAD_MODEL);
-    // Sin modelo entrenado todavía: se usa el detector general.
-    if (!res.ok || /text\/html/.test(res.headers.get('content-type') || '')) return null;
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    const ort = await import(/* @vite-ignore */ ORT + 'ort.wasm.min.mjs');
-    ort.env.wasm.wasmPaths = { mjs: ORT + 'ort-wasm-simd-threaded.asyncify.mjs', wasm: ORT + 'ort-wasm-simd-threaded.asyncify.wasm' };
-    ort.env.wasm.numThreads = 1;
-    const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
-    return { ort, session };
-  })().catch((err) => {
-    console.warn('Detector de cabezas no disponible', err);
-    return null;
-  });
-  return headPromise;
+// Píxeles de un canvas n x n en formato CHW (canales separados).
+function pixels(canvas, n, mean = [0, 0, 0], std = [1, 1, 1]) {
+  const { data } = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, n, n);
+  const input = new Float32Array(3 * n * n);
+  for (let i = 0; i < n * n; i++) {
+    for (let c = 0; c < 3; c++) input[c * n * n + i] = (data[i * 4 + c] / 255 - mean[c]) / std[c];
+  }
+  return input;
 }
 
 /**
@@ -170,14 +185,8 @@ async function locateHead(canvas) {
   ctx.fillRect(0, 0, n, n);
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(canvas, dx, dy, w, h);
-  const { data } = ctx.getImageData(0, 0, n, n);
-  const input = new Float32Array(3 * n * n);
-  for (let i = 0; i < n * n; i++) {
-    input[i] = data[i * 4] / 255;
-    input[n * n + i] = data[i * 4 + 1] / 255;
-    input[2 * n * n + i] = data[i * 4 + 2] / 255;
-  }
-  const feeds = { [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, n, n]) };
+  const feeds = { [session.inputNames[0]]: new ort.Tensor('float32', pixels(box, n), [1, 3, n, n]) };
+  box.width = box.height = 0;
   const out = (await session.run(feeds))[session.outputNames[0]];
   // Salida de YOLO: [1, 5, N] con (cx, cy, ancho, alto, puntaje) por columna.
   const count = out.dims[2], d = out.data;
@@ -190,9 +199,8 @@ async function locateHead(canvas) {
 }
 
 /**
- * Busca la mascota en la imagen: primero su cabeza y, si no se ve, el animal
- * completo. Devuelve la caja más segura { x, y, w, h, head }, false si no hay
- * ninguna, o null si no hay detector disponible.
+ * Busca la cabeza de la mascota en la imagen. Devuelve { x, y, w, h, head },
+ * false si no hay ninguna, o null si no hay detector disponible.
  */
 export async function locatePet(canvas) {
   if (await server()) {
@@ -202,21 +210,7 @@ export async function locatePet(canvas) {
       serverDown(err);
     }
   }
-  const head = await locateHead(canvas);
-  if (head) return head;
-  const body = await locateBody(canvas);
-  return body ?? head;
-}
-
-async function locateBody(canvas) {
-  const [t, det] = await Promise.all([lib().catch(() => null), detector()]);
-  if (!t || !det) return null;
-  const found = (await det(t.RawImage.fromCanvas(canvas), { threshold: 0.5 }))
-    .filter((d) => d.label === 'dog' || d.label === 'cat')
-    .sort((a, b) => b.score - a.score)[0];
-  if (!found) return false;
-  const { xmin, ymin, xmax, ymax } = found.box;
-  return { x: xmin, y: ymin, w: xmax - xmin, h: ymax - ymin };
+  return locateHead(canvas);
 }
 
 /**
@@ -236,24 +230,36 @@ export async function embed(canvas) {
       serverDown(err);
     }
   }
-  const [t, model] = await Promise.all([lib().catch(() => null), dino()]);
-  if (!t || !model) return { dino: null, basic };
+  const model = await dino();
+  if (!model) return { dino: null, basic };
   // Se suma la imagen con su espejo: la huella queda estable aunque la
   // mascota gire un poco la cabeza.
-  const flipped = document.createElement('canvas');
-  flipped.width = flipped.height = SIZE;
-  const ctx = flipped.getContext('2d');
-  ctx.scale(-1, 1);
-  ctx.drawImage(canvas, -SIZE, 0);
-  const a = cls(await model(t.RawImage.fromCanvas(canvas)));
-  const b = cls(await model(t.RawImage.fromCanvas(flipped)));
+  const a = await cls(model, canvas, false);
+  const b = await cls(model, canvas, true);
   return { dino: normalize(a.map((v, i) => v + b[i])), basic };
 }
 
-// Vector del token [CLS] (el primero) de la última capa.
-function cls(tensor) {
-  const d = tensor.dims[tensor.dims.length - 1];
-  return Array.from(tensor.data.slice(0, d));
+// Token [CLS] de DINOv2. Mismo preprocesamiento que antes (transformers.js)
+// y que server/app.py: se agranda a 256 y se toma el centro de 224, o sea el
+// cuadro central de 196 px del recorte.
+const DINO_MEAN = [0.485, 0.456, 0.406], DINO_STD = [0.229, 0.224, 0.225];
+async function cls({ ort, session }, canvas, mirror) {
+  const input = document.createElement('canvas');
+  input.width = input.height = SIZE;
+  const ctx = input.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingQuality = 'high';
+  if (mirror) {
+    ctx.translate(SIZE, 0);
+    ctx.scale(-1, 1);
+  }
+  const m = SIZE / 256 * 16, side = SIZE - 2 * m;
+  ctx.drawImage(canvas, m, m, side, side, 0, 0, SIZE, SIZE);
+  const tensor = new ort.Tensor('float32', pixels(input, SIZE, DINO_MEAN, DINO_STD), [1, 3, SIZE, SIZE]);
+  input.width = input.height = 0;
+  const res = await session.run({ [session.inputNames[0]]: tensor });
+  const out = res.last_hidden_state ?? res[session.outputNames[0]];
+  const d = out.dims[out.dims.length - 1];
+  return Array.from(out.data.slice(0, d));
 }
 
 const MODELS = ['dino', 'mobilenet', 'basic'];
