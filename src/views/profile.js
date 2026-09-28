@@ -1,4 +1,4 @@
-import { saveUser, listUsers, switchUser, myPets, removeMyPet, CLOUD } from '../data.js';
+import { saveUser, listUsers, switchUser, myPets, removeMyPet, contactAdmin, CLOUD } from '../data.js';
 import { askPermission, notificationsSupported } from '../notify.js';
 import { esc, toast, go, isComplete } from '../ui.js';
 
@@ -47,6 +47,15 @@ export default async function profile(el, _params, { user, refresh }) {
         </div>` : ''}
 
       <div class="card">
+        <h2>¿Necesitas ayuda?</h2>
+        <p>Escríbele al administrador de Pet Safe. Te responderá en Avisos 🔔.</p>
+        <form class="form" id="contact">
+          <label>Tu mensaje<textarea name="body" rows="3" required maxlength="1000"></textarea></label>
+          <button class="btn secondary">Enviar al administrador</button>
+        </form>
+      </div>
+
+      <div class="card">
         ${CLOUD ? '' : '<button class="btn ghost" id="newuser">Agregar otro usuario</button>'}
         <a class="btn ghost" href="#/admin">Administrador</a>
       </div>` : ''}`;
@@ -70,6 +79,21 @@ export default async function profile(el, _params, { user, refresh }) {
       refresh();
     }),
   );
+
+  el.querySelector('#contact')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = new FormData(e.target).get('body').trim();
+    if (!body) return;
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
+    try {
+      await contactAdmin(user, body);
+      e.target.reset();
+      toast('Mensaje enviado. Te responderán en Avisos.', 'ok');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   el.querySelector('#perm')?.addEventListener('click', async () => {
     await askPermission();

@@ -218,3 +218,22 @@ export async function isAdmin() {
 export async function claimAdmin() {
   return Boolean(await run(sb().rpc('claim_admin')));
 }
+
+// ---------- Mensajes de usuarios al administrador ----------
+// Al guardarse, la base avisa a los administradores (ver schema.sql).
+
+export async function contactAdmin(user, body) {
+  return run(sb().from('contacts').insert({ name: user.name, phone: user.phone, body }));
+}
+
+export async function listContacts() {
+  return rows(await run(sb().from('contacts').select('*').order('created_at', { ascending: false }).limit(200)));
+}
+
+export async function markContactRead(id) {
+  return run(sb().from('contacts').update({ read: true }).eq('id', id));
+}
+
+export async function deleteContact(id) {
+  return run(sb().from('contacts').delete().eq('id', id));
+}

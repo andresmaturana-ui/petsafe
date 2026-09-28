@@ -1,7 +1,7 @@
 import {
   allPets, savePet, allFound, saveFound, deleteFound, listUsers, notify, notifyAll,
   latestSuccesses, deleteSuccess, commentsFor, deleteComment, addSuccess, markRecovered,
-  CLOUD, isAdmin, claimAdmin,
+  CLOUD, isAdmin, claimAdmin, listContacts, markContactRead, deleteContact,
 } from '../data.js';
 import { esc, timeAgo, toast, changed } from '../ui.js';
 
@@ -140,33 +140,111 @@ async function alertas(panel, { refresh }) {
   );
 }
 
-async function mensajes(panel) {
-  const users = await listUsers();
+async function mensajes(panel, { refresh }) {
+  const [users, contacts] = await Promise.all([listUsers(), listContacts()]);
+  // "Responder" o "Enviar mensaje" desde otra pestaña dejan elegido al destinatario.
+  let to = sessionStorage.getItem('petsafe-admin-to') || '*';
+  sessionStorage.removeItem('petsafe-admin-to');
+  const unread = contacts.filter((c) => !c.read).length;
+
   panel.innerHTML = `
     <div class="card">
+      <h2>Mensajes recibidos${unread ? ` (${unread} sin leer)` : ''}</h2>
+      ${contacts.length ? contacts.map((c) => `
+        <div class="contact-msg ${c.read ? '' : 'unread'}">
+          <strong>${esc(c.name || 'Usuario')}</strong>
+          <small class="muted">${esc(c.phone)} · ${timeAgo(c.createdAt)}</small>
+          <p>${esc(c.body)}</p>
+          <span class="row-actions">
+            <button class="btn small" data-reply="${esc(c.userId)}" data-cid="${c.id}">Responder</button>
+            ${c.read ? '' : `<button class="btn small ghost" data-readc="${c.id}">Marcar leído</button>`}
+            <button class="btn small danger" data-delm="${c.id}">Eliminar</button>
+          </span>
+        </div>`).join('') : '<p class="muted">Todavía no hay mensajes de usuarios.</p>'}
+    </div>
+    <div class="card" id="send">
       <h2>Enviar mensaje</h2>
       <form class="form" id="msg">
-        <label>Para
-          <select name="to">
-            <option value="*">Todos los usuarios (${users.length})</option>
-            ${users.map((u) => `<option value="${u.id}">${esc(u.name)} · ${esc(u.phone)}</option>`).join('')}
-          </select>
-        </label>
+        <div class="recipient"><strong>Para:</strong> <span id="to-label"></span>
+          <button type="button" class="link" id="to-all">Enviar a todos</button></div>
+        <input class="search" type="search" id="q" placeholder="Buscar usuario por nombre, teléfono o correo" autocomplete="off">
+        <ul class="user-results" id="results"></ul>
         <label>Título<input name="title" required maxlength="80"></label>
         <label>Mensaje<textarea name="body" rows="4" required maxlength="500"></textarea></label>
         <button class="btn primary big">Enviar notificación</button>
       </form>
     </div>`;
 
+  const setTo = (id) => {
+    to = users.some((u) => u.id === id) ? id : '*';
+    const u = users.find((x) => x.id === to);
+    panel.querySelector('#to-label').textContent = u ? `${u.name} · ${u.phone}` : `Todos los usuarios (${users.length})`;
+    panel.querySelector('#to-all').hidden = to === '*';
+  };
+  setTo(to);
+  panel.querySelector('#to-all').addEventListener('click', () => setTo('*'));
+  userSearch(panel.querySelector('#q'), panel.querySelector('#results'), users, (u) => `
+    <li><span><strong>${esc(u.name)}</strong><small>${esc(u.phone)}${u.email ? ` · ${esc(u.email)}` : ''}</small></span>
+    <button type="button" class="btn small" data-pick="${esc(u.id)}">Elegir</button></li>`, (el) => {
+    el.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {
+      setTo(b.dataset.pick);
+      panel.querySelector('#q').value = '';
+      el.innerHTML = '';
+    }));
+  });
+
+  panel.querySelectorAll('[data-reply]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      setTo(b.dataset.reply);
+      await markContactRead(b.dataset.cid);
+      b.closest('.contact-msg').classList.remove('unread');
+      panel.querySelector('#send').scrollIntoView({ behavior: 'smooth' });
+      panel.querySelector('input[name=title]').focus({ preventScroll: true });
+    }),
+  );
+  panel.querySelectorAll('[data-readc]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      await markContactRead(b.dataset.readc);
+      refresh();
+    }),
+  );
+  panel.querySelectorAll('[data-delm]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      if (!confirm('¿Eliminar este mensaje?')) return;
+      await deleteContact(b.dataset.delm);
+      refresh();
+    }),
+  );
+
   panel.querySelector('#msg').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const msg = { type: 'admin', title: f.get('title').trim(), body: f.get('body').trim() };
-    if (f.get('to') === '*') await notifyAll(msg);
-    else await notify(f.get('to'), msg);
+    if (to === '*') await notifyAll(msg);
+    else await notify(to, msg);
     changed();
     e.target.reset();
+    setTo('*');
     toast('Mensaje enviado ✉️', 'ok');
+  });
+}
+
+// Buscador de usuarios por nombre, apellido, teléfono, correo o dirección
+// (sin distinguir mayúsculas ni tildes). Muestra hasta 10 resultados.
+function userSearch(input, list, users, row, bind) {
+  const norm = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const digits = (t) => String(t ?? '').replace(/\D/g, '');
+  input.addEventListener('input', () => {
+    const q = norm(input.value.trim());
+    if (!q) return (list.innerHTML = '');
+    const qd = digits(q);
+    const found = users.filter((u) =>
+      [u.name, u.firstName, u.lastName, u.email, u.address].some((v) => norm(v).includes(q)) ||
+      (qd.length >= 3 && digits(u.phone).includes(qd)));
+    list.innerHTML = found.slice(0, 10).map(row).join('') ||
+      '<li><span class="muted">Ningún usuario coincide.</span></li>';
+    if (found.length > 10) list.insertAdjacentHTML('beforeend', `<li><span class="muted">y ${found.length - 10} más: escribe algo más específico.</span></li>`);
+    bind(list);
   });
 }
 
@@ -241,7 +319,7 @@ function dogAvatar(fur) {
 
 // Descarga de usuarios y mascotas para el administrador. Estos datos no se
 // muestran en ninguna otra parte de la app.
-async function datos(panel) {
+async function datos(panel, { refresh }) {
   const [users, pets] = await Promise.all([listUsers(), allPets()]);
   panel.innerHTML = `
     <div class="card">
@@ -249,7 +327,26 @@ async function datos(panel) {
       <p>${users.length} usuario${users.length === 1 ? '' : 's'} · ${pets.length} mascota${pets.length === 1 ? '' : 's'} registrada${pets.length === 1 ? '' : 's'}</p>
       <p class="muted small">Una fila por mascota con los datos de su dueño; los usuarios sin mascotas aparecen en una fila sin mascota. Se abre en Excel o Google Sheets.</p>
       <button class="btn primary big" id="csv">Descargar CSV</button>
+    </div>
+    <div class="card">
+      <h2>Buscar usuario</h2>
+      <input class="search" type="search" id="q" placeholder="Nombre, teléfono, correo o dirección" autocomplete="off">
+      <ul class="user-results" id="results"></ul>
     </div>`;
+  userSearch(panel.querySelector('#q'), panel.querySelector('#results'), users, (u) => {
+    const own = pets.filter((p) => p.ownerId === u.id);
+    return `<li><span><strong>${esc(u.firstName ? `${u.firstName} ${u.lastName}` : u.name)}</strong>
+      <small>📞 ${esc(u.phone)}${u.email ? ` · ✉️ ${esc(u.email)}` : ''}</small>
+      ${u.address ? `<small>🏠 ${esc(u.address)}</small>` : ''}
+      <small>🐾 ${own.length ? own.map((p) => `${esc(p.name)}${p.status === 'lost' ? ' (perdida)' : ''}`).join(', ') : 'Sin mascotas'}</small></span>
+      <button type="button" class="btn small" data-msg="${esc(u.id)}">Mensaje</button></li>`;
+  }, (el) => {
+    el.querySelectorAll('[data-msg]').forEach((b) => b.addEventListener('click', () => {
+      sessionStorage.setItem('petsafe-admin-to', b.dataset.msg);
+      sessionStorage.setItem('petsafe-admin-tab', 'mensajes');
+      refresh();
+    }));
+  });
   panel.querySelector('#csv').addEventListener('click', () => {
     const header = [
       'Nombres', 'Apellidos', 'Teléfono', 'Correo', 'Dirección', 'Usuario desde',

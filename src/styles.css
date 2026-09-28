@@ -172,9 +172,10 @@ img { max-width: 100%; }
 .card > .btn + .btn { margin-top: 8px; }
 
 /* Formularios */
-.form { display: grid; gap: 14px; }
-.form label { display: grid; gap: 6px; font-weight: 700; }
+.form { display: grid; gap: 14px; min-width: 0; }
+.form label { display: grid; gap: 6px; font-weight: 700; min-width: 0; }
 .form input, .form textarea, .form select {
+  width: 100%; min-width: 0; box-sizing: border-box;
   font: inherit; font-weight: 400; color: var(--text);
   padding: 13px 14px; border-radius: 14px;
   border: 2px solid var(--line); background: var(--bg);
@@ -278,7 +279,7 @@ img { max-width: 100%; }
 
 /* Admin */
 .admin-head { display: grid; gap: 10px; }
-.tabs { display: flex; gap: 6px; overflow-x: auto; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .tab { font: inherit; font-weight: 800; padding: 8px 14px; border-radius: 999px; border: 0; background: var(--cream); color: var(--muted); cursor: pointer; white-space: nowrap; }
 .tab.on { background: var(--coral); color: #fff; }
 .admin-case { padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -323,3 +324,16 @@ img { max-width: 100%; }
 .scan-warning p { margin: 0 0 8px; font-weight: 700; }
 .scan-warning .row { display: flex; gap: 8px; }
 .note { font-size: 0.85rem; color: var(--muted); background: var(--cream); border-radius: 12px; padding: 10px 12px; }
+
+/* Buscador de usuarios (administrador) */
+.search { width: 100%; box-sizing: border-box; font: inherit; padding: 12px 14px; border-radius: 14px; border: 2px solid var(--line); background: var(--bg); }
+.search:focus { outline: none; border-color: var(--orange); background: #fff; }
+.user-results { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; }
+.user-results li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--cream); }
+.user-results li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.user-results strong { display: block; }
+.user-results small { color: var(--muted); display: block; }
+.recipient { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.contact-msg { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.contact-msg p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.contact-msg.unread strong::before { content: '● '; color: var(--coral); }

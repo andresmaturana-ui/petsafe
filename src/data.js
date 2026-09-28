@@ -42,3 +42,7 @@ export const countComments = call('countComments');
 export const addSuccess = call('addSuccess');
 export const isAdmin = call('isAdmin');
 export const claimAdmin = call('claimAdmin');
+export const contactAdmin = call('contactAdmin');
+export const listContacts = call('listContacts');
+export const markContactRead = call('markContactRead');
+export const deleteContact = call('deleteContact');

@@ -319,6 +319,31 @@ begin
   return n;
 end $$;
 
+-- ---------- Mensajes de usuarios al administrador ----------
+
+create table if not exists public.contacts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  name text not null default '',
+  phone text not null default '',
+  body text not null check (char_length(body) between 1 and 1000),
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+-- Cada mensaje nuevo llega como aviso a los administradores.
+create or replace function public.notify_admins_contact() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into notifications (user_id, type, title, body, url)
+  select a.user_id, 'contact', 'Mensaje de ' || coalesce(nullif(new.name, ''), 'un usuario'), left(new.body, 140), '#/admin'
+  from admins a;
+  return new;
+end $$;
+drop trigger if exists contacts_notify on public.contacts;
+create trigger contacts_notify after insert on public.contacts
+  for each row execute function public.notify_admins_contact();
+
 -- ---------- Seguridad (RLS) ----------
 
 alter table public.profiles enable row level security;
@@ -330,6 +355,7 @@ alter table public.found_samples enable row level security;
 alter table public.notifications enable row level security;
 alter table public.successes enable row level security;
 alter table public.comments enable row level security;
+alter table public.contacts enable row level security;
 
 drop policy if exists "perfil propio o admin" on public.profiles;
 create policy "perfil propio o admin" on public.profiles for select using (id = auth.uid() or is_admin());
@@ -376,6 +402,15 @@ drop policy if exists "comentar" on public.comments;
 create policy "comentar" on public.comments for insert with check (user_id = auth.uid());
 drop policy if exists "borrar comentario" on public.comments;
 create policy "borrar comentario" on public.comments for delete using (user_id = auth.uid() or is_admin());
+
+drop policy if exists "escribir al admin" on public.contacts;
+create policy "escribir al admin" on public.contacts for insert with check (user_id = auth.uid());
+drop policy if exists "admin lee mensajes" on public.contacts;
+create policy "admin lee mensajes" on public.contacts for select using (is_admin());
+drop policy if exists "admin marca mensajes" on public.contacts;
+create policy "admin marca mensajes" on public.contacts for update using (is_admin());
+drop policy if exists "admin borra mensajes" on public.contacts;
+create policy "admin borra mensajes" on public.contacts for delete using (is_admin());
 
 -- Avisos en tiempo real mientras la app está abierta.
 do $$ begin

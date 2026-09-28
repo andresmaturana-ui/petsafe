@@ -3,8 +3,8 @@
 // mientras las funciones mantengan la misma firma, el resto de la app no cambia.
 
 const DB_NAME = 'petsafe';
-const DB_VERSION = 1;
-export const STORES = ['users', 'pets', 'found', 'notifications', 'successes', 'comments', 'meta'];
+const DB_VERSION = 2;
+export const STORES = ['users', 'pets', 'found', 'notifications', 'successes', 'comments', 'contacts', 'meta'];
 
 let dbPromise;
 

@@ -247,3 +247,20 @@ export async function addSuccess(s) {
 
 export const isAdmin = async () => false;
 export const claimAdmin = async () => false;
+
+// ---------- Mensajes de usuarios al administrador ----------
+
+export async function contactAdmin(user, body) {
+  return db.put('contacts', { id: uid('m_'), userId: user.id, name: user.name, phone: user.phone, body, read: false, createdAt: now() });
+}
+
+export async function listContacts() {
+  return (await db.all('contacts')).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function markContactRead(id) {
+  const c = await db.get('contacts', id);
+  if (c) await db.put('contacts', { ...c, read: true });
+}
+
+export const deleteContact = (id) => db.delete('contacts', id);
