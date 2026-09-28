@@ -5,6 +5,7 @@ import {
 } from '../data.js';
 import { esc, timeAgo, toast, changed } from '../ui.js';
 import { SPECIES, describe } from '../breeds.js';
+import { zip, fromDataUrl } from '../zip.js';
 
 // PIN de prototipo. En producción el acceso de administrador debe
 // validarse en el servidor con un rol de usuario.
@@ -326,8 +327,9 @@ async function datos(panel, { refresh }) {
     <div class="card">
       <h2>Usuarios y mascotas</h2>
       <p>${users.length} usuario${users.length === 1 ? '' : 's'} · ${pets.length} mascota${pets.length === 1 ? '' : 's'} registrada${pets.length === 1 ? '' : 's'}</p>
-      <p class="muted small">Una fila por mascota con los datos de su dueño; los usuarios sin mascotas aparecen en una fila sin mascota. Se abre en Excel o Google Sheets.</p>
-      <button class="btn primary big" id="csv">Descargar CSV</button>
+      <p class="muted small">Una fila por mascota con los datos de su dueño; los usuarios sin mascotas aparecen en una fila sin mascota. Se abre en Excel o Google Sheets. El ZIP trae además la foto de cada mascota, con el nombre de archivo en la columna Foto.</p>
+      <button class="btn primary big" id="zip">Descargar CSV con fotos (ZIP)</button>
+      <button class="btn secondary" id="csv">Solo CSV</button>
     </div>
     <div class="card">
       <h2>Buscar usuario</h2>
@@ -348,18 +350,34 @@ async function datos(panel, { refresh }) {
       refresh();
     }));
   });
-  panel.querySelector('#csv').addEventListener('click', () => {
+  // Foto de cada mascota como archivo: fotos/<nombre>-<id>.jpg
+  const photos = new Map();
+  for (const p of pets) {
+    const img = fromDataUrl(p.photo);
+    if (!img) continue;
+    const slug = (p.name || 'mascota').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '') || 'mascota';
+    photos.set(p.id, { name: `fotos/${slug}-${String(p.id).replace(/[^a-zA-Z0-9]/g, '').slice(-6)}.${img.ext}`, data: img.data });
+  }
+  const table = () => {
     const header = [
       'Nombres', 'Apellidos', 'Teléfono', 'Correo', 'Dirección', 'Usuario desde',
-      'Mascota', 'Tipo', 'Raza', 'Nombre del dueño (registro)', 'Estado', 'Enfermedades', 'Vacunas', 'Mascota registrada',
+      'Mascota', 'Tipo', 'Raza', 'Nombre del dueño (registro)', 'Estado', 'Enfermedades', 'Vacunas', 'Mascota registrada', 'Foto',
     ];
     const person = (u) => [u?.firstName || u?.name, u?.lastName, u?.phone, u?.email, u?.address, day(u?.createdAt)];
     const rows = pets.map((p) => [
       ...person(users.find((u) => u.id === p.ownerId)),
-      p.name, SPECIES[p.species] || '', p.breed || '', p.ownerName, p.status === 'lost' ? 'Perdida' : 'En casa', p.diseases, p.vaccines, day(p.createdAt),
+      p.name, SPECIES[p.species] || '', p.breed || '', p.ownerName, p.status === 'lost' ? 'Perdida' : 'En casa', p.diseases, p.vaccines, day(p.createdAt), photos.get(p.id)?.name || '',
     ]);
-    for (const u of users) if (!pets.some((p) => p.ownerId === u.id)) rows.push([...person(u), '', '', '', '', '', '', '', '']);
-    download(`petsafe-datos-${day(new Date().toISOString())}.csv`, toCsv([header, ...rows]));
+    for (const u of users) if (!pets.some((p) => p.ownerId === u.id)) rows.push([...person(u), '', '', '', '', '', '', '', '', '']);
+    return toCsv([header, ...rows]);
+  };
+  const name = `petsafe-datos-${day(new Date().toISOString())}`;
+  panel.querySelector('#csv').addEventListener('click', () => {
+    download(`${name}.csv`, new Blob([table()], { type: 'text/csv;charset=utf-8' }));
+  });
+  panel.querySelector('#zip').addEventListener('click', () => {
+    const csv = { name: `${name}.csv`, data: new TextEncoder().encode(table()) };
+    download(`${name}.zip`, zip([csv, ...photos.values()]));
   });
 }
 
@@ -377,8 +395,8 @@ function toCsv(rows) {
   return '\ufeff' + rows.map((r) => r.map(cell).join(';')).join('\r\n');
 }
 
-function download(name, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+function download(name, blob) {
+  const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement('a'), { href: url, download: name });
   document.body.append(a);
   a.click();
