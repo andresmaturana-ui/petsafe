@@ -93,7 +93,7 @@ function headModel() {
   headPromise ??= (async () => {
     const res = await fetch(HEAD_MODEL);
     // Sin modelo entrenado todavía: se usa el detector general.
-    if (!res.ok || !/octet|onnx/.test(res.headers.get('content-type') || 'application/octet-stream')) return null;
+    if (!res.ok || /text\/html/.test(res.headers.get('content-type') || '')) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     const ort = await import(/* @vite-ignore */ ORT + 'ort.wasm.min.mjs');
     ort.env.wasm.wasmPaths = { mjs: ORT + 'ort-wasm-simd-threaded.asyncify.mjs', wasm: ORT + 'ort-wasm-simd-threaded.asyncify.wasm' };
