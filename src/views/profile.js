@@ -1,6 +1,6 @@
 import { saveUser, listUsers, switchUser, myPets, removeMyPet, CLOUD } from '../data.js';
 import { askPermission, notificationsSupported } from '../notify.js';
-import { esc, toast, go } from '../ui.js';
+import { esc, toast, go, isComplete } from '../ui.js';
 
 export default async function profile(el, _params, { user, refresh }) {
   // Con Supabase cada celular es un usuario; cambiar de usuario es solo para pruebas locales.
@@ -11,10 +11,14 @@ export default async function profile(el, _params, { user, refresh }) {
   el.innerHTML = `
     <div class="card">
       <h1>${user ? 'Tu perfil' : 'Bienvenido a Pet Safe 🐾'}</h1>
-      ${user ? '' : '<p>Cuéntanos quién eres. Tu teléfono solo se comparte con el dueño de una mascota que encuentres.</p>'}
+      ${!user ? '<p>Cuéntanos quién eres.</p>' : isComplete(user) ? '' : '<p class="note">Completa tus datos para seguir usando Pet Safe.</p>'}
       <form class="form" id="profile">
-        <label>Tu nombre<input name="name" required value="${esc(user?.name)}" autocomplete="name"></label>
+        <label>Nombres<input name="firstName" required value="${esc(user?.firstName || user?.name)}" autocomplete="given-name"></label>
+        <label>Apellidos<input name="lastName" required value="${esc(user?.lastName)}" autocomplete="family-name"></label>
         <label>Teléfono (WhatsApp)<input name="phone" type="tel" required placeholder="+56 9 1234 5678" value="${esc(user?.phone)}" autocomplete="tel"></label>
+        <label>Correo<input name="email" type="email" required value="${esc(user?.email)}" autocomplete="email"></label>
+        <label>Dirección<input name="address" required placeholder="Calle, número, comuna" value="${esc(user?.address)}" autocomplete="street-address"></label>
+        <p class="muted small">Tu nombre y teléfono solo se comparten con el dueño de una mascota que encuentres. El correo y la dirección solo los ve el administrador de Pet Safe.</p>
         <button class="btn primary big">${user ? 'Guardar' : 'Comenzar'}</button>
       </form>
     </div>
@@ -50,10 +54,11 @@ export default async function profile(el, _params, { user, refresh }) {
   el.querySelector('#profile').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
-    await saveUser({ id: user?.id, name: f.get('name').trim(), phone: f.get('phone').trim() });
+    const data = Object.fromEntries(['firstName', 'lastName', 'phone', 'email', 'address'].map((k) => [k, f.get(k).trim()]));
+    await saveUser({ id: user?.id, ...data, name: `${data.firstName} ${data.lastName}` });
     if (!user) await askPermission();
     toast('¡Listo!', 'ok');
-    user ? refresh() : go('#/');
+    isComplete(user) ? refresh() : go('#/');
   });
 
   el.querySelectorAll('[data-delpet]').forEach((b) =>

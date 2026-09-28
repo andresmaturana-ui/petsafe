@@ -14,8 +14,9 @@ export async function currentUser() {
   return meta ? db.get('users', meta.userId) : null;
 }
 
-export async function saveUser({ id, name, phone }) {
-  const user = await db.put('users', { id: id || uid('u_'), name, phone, createdAt: now() });
+export async function saveUser({ id, ...fields }) {
+  const old = id ? await db.get('users', id) : null;
+  const user = await db.put('users', { ...old, ...fields, id: id || uid('u_'), createdAt: old?.createdAt || now() });
   await db.put('meta', { id: 'currentUser', userId: user.id });
   return user;
 }

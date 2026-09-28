@@ -1,7 +1,7 @@
 import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
 import { currentUser, myNotifications, deliverPending } from './data.js';
-import { PAW, esc } from './ui.js';
+import { PAW, esc, isComplete } from './ui.js';
 
 import home from './views/home.js';
 import profile from './views/profile.js';
@@ -61,8 +61,8 @@ async function render() {
   const user = await currentUser();
   const hash = location.hash || '#/';
   let { view, params } = resolve(hash);
-  // Primer uso: pedir nombre y teléfono.
-  if (!user && view !== profile && view !== admin) view = profile;
+  // Primer uso, o perfil creado antes de pedir todos los datos: completar perfil.
+  if (!isComplete(user) && view !== profile && view !== admin) view = profile;
 
   const tab = hash.replace(/^#\/?/, '').split('/')[0];
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));

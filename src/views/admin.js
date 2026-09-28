@@ -19,7 +19,7 @@ export default async function admin(el, _params, ctx) {
     <div class="admin-head">
       <h1>Administrador</h1>
       <div class="tabs">
-        ${[['alertas', '🚨 Alertas'], ['mensajes', '📢 Mensajes'], ['casos', '💛 Reencuentros']]
+        ${[['alertas', '🚨 Alertas'], ['mensajes', '📢 Mensajes'], ['casos', '💛 Reencuentros'], ['datos', '📋 Datos']]
           .map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
       </div>
     </div>
@@ -33,7 +33,7 @@ export default async function admin(el, _params, ctx) {
   );
 
   const panel = el.querySelector('#panel');
-  await ({ alertas, mensajes, casos })[tab](panel, ctx);
+  await ({ alertas, mensajes, casos, datos })[tab](panel, ctx);
 }
 
 // Con Supabase el permiso vive en el servidor: el primer usuario que lo pide
@@ -237,4 +237,53 @@ function dogAvatar(fur) {
     <ellipse cx="100" cy="152" rx="7" ry="9" fill="#F28C8C"/>
   </svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+// Descarga de usuarios y mascotas para el administrador. Estos datos no se
+// muestran en ninguna otra parte de la app.
+async function datos(panel) {
+  const [users, pets] = await Promise.all([listUsers(), allPets()]);
+  panel.innerHTML = `
+    <div class="card">
+      <h2>Usuarios y mascotas</h2>
+      <p>${users.length} usuario${users.length === 1 ? '' : 's'} · ${pets.length} mascota${pets.length === 1 ? '' : 's'} registrada${pets.length === 1 ? '' : 's'}</p>
+      <p class="muted small">Una fila por mascota con los datos de su dueño; los usuarios sin mascotas aparecen en una fila sin mascota. Se abre en Excel o Google Sheets.</p>
+      <button class="btn primary big" id="csv">Descargar CSV</button>
+    </div>`;
+  panel.querySelector('#csv').addEventListener('click', () => {
+    const header = [
+      'Nombres', 'Apellidos', 'Teléfono', 'Correo', 'Dirección', 'Usuario desde',
+      'Mascota', 'Nombre del dueño (registro)', 'Estado', 'Enfermedades', 'Vacunas', 'Mascota registrada',
+    ];
+    const person = (u) => [u?.firstName || u?.name, u?.lastName, u?.phone, u?.email, u?.address, day(u?.createdAt)];
+    const rows = pets.map((p) => [
+      ...person(users.find((u) => u.id === p.ownerId)),
+      p.name, p.ownerName, p.status === 'lost' ? 'Perdida' : 'En casa', p.diseases, p.vaccines, day(p.createdAt),
+    ]);
+    for (const u of users) if (!pets.some((p) => p.ownerId === u.id)) rows.push([...person(u), '', '', '', '', '', '']);
+    download(`petsafe-datos-${day(new Date().toISOString())}.csv`, toCsv([header, ...rows]));
+  });
+}
+
+const day = (iso) => (iso ? String(iso).slice(0, 10) : '');
+
+// Separado por punto y coma y con BOM, para que Excel en español lo abra bien.
+// Los valores que empiezan con = + - @ se anteponen con ' para que Excel no
+// los ejecute como fórmula.
+function toCsv(rows) {
+  const cell = (v) => {
+    let t = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+    return `"${t.replace(/"/g, '""')}"`;
+  };
+  return '\ufeff' + rows.map((r) => r.map(cell).join(';')).join('\r\n');
+}
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

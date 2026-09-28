@@ -1,5 +1,9 @@
 // Utilidades pequeñas para armar la interfaz.
 
+/** El perfil tiene todos los datos que se piden al crear la cuenta. */
+export const isComplete = (user) =>
+  Boolean(user?.firstName && user?.lastName && user?.phone && user?.email && user?.address);
+
 export const esc = (s = '') =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 

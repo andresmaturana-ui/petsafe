@@ -12,6 +12,12 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+-- Datos personales: solo los ven la misma persona y el administrador (RLS abajo).
+alter table public.profiles add column if not exists first_name text not null default '';
+alter table public.profiles add column if not exists last_name text not null default '';
+alter table public.profiles add column if not exists email text not null default '';
+alter table public.profiles add column if not exists address text not null default '';
+
 create table if not exists public.admins (
   user_id uuid primary key references auth.users on delete cascade
 );

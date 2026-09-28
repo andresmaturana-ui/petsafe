@@ -50,9 +50,10 @@ export async function currentUser() {
   return camel(profile);
 }
 
-export async function saveUser({ name, phone }) {
+export async function saveUser({ name, phone, firstName = '', lastName = '', email = '', address = '' }) {
   const auth = await session();
-  return camel(await run(sb().from('profiles').upsert({ id: auth.id, name, phone }).select().single()));
+  const row = { id: auth.id, name, phone, first_name: firstName, last_name: lastName, email, address };
+  return camel(await run(sb().from('profiles').upsert(row).select().single()));
 }
 
 export async function switchUser() {}
