@@ -51,7 +51,7 @@ export default async function found(el, _params, { user }) {
     const f = new FormData(e.target);
     const btn = e.target.querySelector('button');
     btn.disabled = true;
-    const { care } = await reportFound(user, {
+    const { care, compared, ownMatch, report } = await reportFound(user, {
       photo: scan.photo,
       biometric: scan.biometric,
       lat: point.lat,
@@ -81,8 +81,20 @@ export default async function found(el, _params, { user }) {
           <div class="empty-emoji">📋</div>
           <h2>No la encontramos registrada</h2>
           <p>Guardamos tu aviso. Si su dueño la reporta como perdida, le llegará tu contacto automáticamente.</p>
+          ${diagnostic(compared, ownMatch, report.bestScore)}
           <a class="btn secondary" href="#/">Volver al inicio</a>
         </div>`;
     result.scrollIntoView({ behavior: 'smooth' });
   });
+}
+
+// Pistas mientras los datos viven solo en este navegador (prototipo).
+function diagnostic(compared, ownMatch, bestScore) {
+  if (ownMatch) {
+    return `<p class="note">Se parece a <strong>${esc(ownMatch)}</strong>, que es tu propia mascota. Para probar, cambia a otro usuario en Perfil.</p>`;
+  }
+  if (!compared) {
+    return '<p class="note">En este navegador no hay mascotas de otros usuarios. Por ahora los registros se guardan solo en el dispositivo donde se hicieron.</p>';
+  }
+  return `<p class="note">Comparamos con ${compared} mascota${compared === 1 ? '' : 's'}. Parecido más alto: ${Math.round((bestScore || 0) * 100)}%.</p>`;
 }

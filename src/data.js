@@ -116,9 +116,16 @@ export async function reportFound(finder, { photo, biometric, lat, lng, finderNa
   };
 
   let best = null;
+  let compared = 0;
+  let ownMatch = null;
   for (const pet of await db.all('pets')) {
-    if (pet.ownerId === finder.id) continue;
     const { score, match } = compare(pet.biometric, biometric);
+    // Una mascota propia no se "encuentra"; se informa para no confundir.
+    if (pet.ownerId === finder.id) {
+      if (match) ownMatch = pet.name;
+      continue;
+    }
+    compared++;
     report.bestScore = Math.max(report.bestScore || 0, score);
     if (match && (!best || score > best.score)) best = { pet, score };
   }
@@ -128,6 +135,8 @@ export async function reportFound(finder, { photo, biometric, lat, lng, finderNa
 
   return {
     report,
+    compared,
+    ownMatch,
     care: best ? { diseases: best.pet.diseases, vaccines: best.pet.vaccines } : null,
   };
 }

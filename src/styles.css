@@ -313,3 +313,4 @@ img { max-width: 100%; }
 .scan-warning { width: 100%; background: #fff3d6; border-radius: 16px; padding: 12px 14px; }
 .scan-warning p { margin: 0 0 8px; font-weight: 700; }
 .scan-warning .row { display: flex; gap: 8px; }
+.note { font-size: 0.85rem; color: var(--muted); background: var(--cream); border-radius: 12px; padding: 10px 12px; }
