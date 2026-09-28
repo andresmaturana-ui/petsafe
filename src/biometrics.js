@@ -25,10 +25,11 @@ function loadModel() {
         import('@tensorflow-models/mobilenet'),
       ]);
       await tf.ready();
-      const model = await withTimeout(mobilenet.load({ version: 2, alpha: 1.0 }), 20000);
+      const model = await withTimeout(mobilenet.load({ version: 2, alpha: 1.0 }), 60000);
       return { tf, model };
     })().catch((err) => {
       console.warn('MobileNet no disponible, se usa el descriptor básico', err);
+      modelPromise = null; // se reintenta en la próxima captura
       return null;
     });
   }
@@ -51,44 +52,58 @@ export function warmUp() {
 const isPetClass = (i) => i >= 151 && i <= 293;
 
 /**
- * Calcula el embedding de una imagen cuadrada (canvas SIZE x SIZE).
- * Devuelve { model, vector, looksLikePet } — looksLikePet es null si no se sabe.
+ * Calcula la huella de una imagen cuadrada (canvas SIZE x SIZE).
+ * Siempre incluye el descriptor básico y, si el modelo cargó, el de MobileNet;
+ * así dos huellas siempre se pueden comparar aunque una se haya tomado sin
+ * conexión. Devuelve { mobilenet, basic, looksLikePet } (looksLikePet es null
+ * si no se sabe).
  */
 export async function embed(canvas) {
+  const basic = normalize(basicDescriptor(canvas));
   const loaded = await loadModel();
-  if (loaded) {
-    const { tf, model } = loaded;
-    // Se promedia la imagen con su espejo: la huella queda estable aunque la
-    // mascota gire un poco la cabeza.
-    const { vector, logits } = tf.tidy(() => {
-      const img = tf.browser.fromPixels(canvas);
-      const flipped = tf.reverse(img, 1);
-      const emb = tf.add(model.infer(img, true), model.infer(flipped, true));
-      const log = model.infer(img, false);
-      return { vector: emb.dataSync().slice(), logits: log.dataSync().slice() };
-    });
-    // MobileNet v2 tiene 1001 clases (la 0 es "fondo").
-    const offset = logits.length === 1001 ? 1 : 0;
-    const top = [...logits.keys()].sort((a, b) => logits[b] - logits[a]).slice(0, 5);
-    return {
-      model: 'mobilenet',
-      vector: normalize(Array.from(vector)),
-      looksLikePet: top.some((i) => isPetClass(i - offset)),
-    };
-  }
-  return { model: 'basic', vector: normalize(basicDescriptor(canvas)), looksLikePet: null };
+  if (!loaded) return { mobilenet: null, basic, looksLikePet: null };
+  const { tf, model } = loaded;
+  // Se promedia la imagen con su espejo: la huella queda estable aunque la
+  // mascota gire un poco la cabeza.
+  const { vector, logits } = tf.tidy(() => {
+    const img = tf.browser.fromPixels(canvas);
+    const flipped = tf.reverse(img, 1);
+    const emb = tf.add(model.infer(img, true), model.infer(flipped, true));
+    const log = model.infer(img, false);
+    return { vector: emb.dataSync().slice(), logits: log.dataSync().slice() };
+  });
+  // MobileNet v2 tiene 1001 clases (la 0 es "fondo").
+  const offset = logits.length === 1001 ? 1 : 0;
+  const top = [...logits.keys()].sort((a, b) => logits[b] - logits[a]).slice(0, 5);
+  return { mobilenet: normalize(Array.from(vector)), basic, looksLikePet: top.some((i) => isPetClass(i - offset)) };
+}
+
+const MODELS = ['mobilenet', 'basic'];
+
+/** El descriptor que tienen todas las huellas: MobileNet si se puede. */
+function commonModel(items) {
+  return MODELS.find((m) => items.every((x) => x?.[m])) || null;
 }
 
 /**
- * Arma la plantilla biométrica con varias capturas: guarda el promedio y
- * también cada captura, para comparar contra el ángulo más parecido.
+ * Arma la plantilla biométrica con varias capturas: guarda, por descriptor,
+ * el promedio y cada captura, para comparar contra el ángulo más parecido.
  */
 export function average(embeddings) {
-  const model = embeddings[0].model;
-  const same = embeddings.filter((e) => e.model === model);
-  const out = new Array(same[0].vector.length).fill(0);
-  for (const e of same) e.vector.forEach((v, i) => (out[i] += v));
-  return { model, vector: normalize(out), samples: same.map((e) => e.vector) };
+  const template = {};
+  for (const m of MODELS) {
+    if (!embeddings.every((e) => e[m])) continue;
+    const out = new Array(embeddings[0][m].length).fill(0);
+    for (const e of embeddings) e[m].forEach((v, i) => (out[i] += v));
+    template[m] = { vector: normalize(out), samples: embeddings.map((e) => e[m]) };
+  }
+  return template;
+}
+
+// Plantillas guardadas con el formato anterior: { model, vector, samples }.
+function upgrade(t) {
+  if (t && t.model && t.vector) return { [t.model]: { vector: t.vector, samples: t.samples || [] } };
+  return t;
 }
 
 const dot = (a, b) => {
@@ -98,32 +113,38 @@ const dot = (a, b) => {
 };
 
 /**
- * Similitud entre dos plantillas (0 a 1). Usa la mejor combinación entre el
- * promedio y cada captura individual.
+ * Compara dos plantillas. Usa la mejor combinación entre el promedio y cada
+ * captura individual. Devuelve { score (0 a 1), model, match }.
  */
-export function similarity(a, b) {
-  if (!a || !b || a.model !== b.model || a.vector.length !== b.vector.length) return 0;
-  const as = [a.vector, ...(a.samples || [])];
-  const bs = [b.vector, ...(b.samples || [])];
-  let best = 0;
-  for (const x of as) for (const y of bs) best = Math.max(best, dot(x, y));
-  return best;
+export function compare(a, b) {
+  a = upgrade(a);
+  b = upgrade(b);
+  const model = commonModel([a, b]);
+  if (!model) return { score: 0, model: null, match: false };
+  const as = [a[model].vector, ...(a[model].samples || [])];
+  const bs = [b[model].vector, ...(b[model].samples || [])];
+  let score = 0;
+  for (const x of as) for (const y of bs) if (x.length === y.length) score = Math.max(score, dot(x, y));
+  return { score, model, match: score >= THRESHOLDS[model] };
 }
 
 /**
  * Qué tan parecida es cada captura al resto (0 a 1). Una captura con valor
  * bajo probablemente es de otro animal o salió mal.
+ * Devuelve { scores, min } donde min es el mínimo aceptable.
  */
 export function consistency(embeddings) {
-  return embeddings.map((e, i) => {
+  const model = commonModel(embeddings);
+  const scores = embeddings.map((e, i) => {
     const others = embeddings.filter((_, j) => j !== i);
     if (!others.length) return 1;
-    return others.reduce((acc, o) => acc + dot(e.vector, o.vector), 0) / others.length;
+    return others.reduce((acc, o) => acc + dot(e[model], o[model]), 0) / others.length;
   });
+  return { scores, min: CONSISTENCY_MIN[model] };
 }
 
 // Solo detecta errores gruesos (otro animal, foto equivocada).
-export const CONSISTENCY_MIN = { mobilenet: 0.6, basic: 0.6 };
+const CONSISTENCY_MIN = { mobilenet: 0.6, basic: 0.6 };
 
 /**
  * Revisa luz y nitidez de una captura.
@@ -158,10 +179,6 @@ export function quality(canvas) {
   else if (brightness > 225) problem = 'Hay demasiada luz, evita el sol directo o el flash.';
   else if (sharpness < 25) problem = 'Salió borrosa, mantén el celular quieto.';
   return { ok: !problem, brightness, sharpness, problem };
-}
-
-export function isMatch(score, model) {
-  return score >= (THRESHOLDS[model] ?? 0.9);
 }
 
 function normalize(v) {

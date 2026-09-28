@@ -2,7 +2,7 @@
 // notificaciones, casos exitosos y comentarios.
 
 import { db, uid } from './db.js';
-import { similarity, isMatch } from './biometrics.js';
+import { compare } from './biometrics.js';
 import { pushLocal } from './notify.js';
 
 const now = () => new Date().toISOString();
@@ -61,8 +61,8 @@ export async function reportLost(pet) {
   const found = (await db.all('found')).filter((f) => f.status === 'open' && (!f.petId || f.petId === pet.id));
   let best = null;
   for (const f of found) {
-    const score = similarity(pet.biometric, f.biometric);
-    if (isMatch(score, pet.biometric?.model) && (!best || score > best.score)) best = { report: f, score };
+    const { score, match } = compare(pet.biometric, f.biometric);
+    if (match && (!best || score > best.score)) best = { report: f, score };
   }
   if (best) {
     best.report.petId = pet.id;
@@ -118,8 +118,9 @@ export async function reportFound(finder, { photo, biometric, lat, lng, finderNa
   let best = null;
   for (const pet of await db.all('pets')) {
     if (pet.ownerId === finder.id) continue;
-    const score = similarity(pet.biometric, biometric);
-    if (isMatch(score, biometric.model) && (!best || score > best.score)) best = { pet, score };
+    const { score, match } = compare(pet.biometric, biometric);
+    report.bestScore = Math.max(report.bestScore || 0, score);
+    if (match && (!best || score > best.score)) best = { pet, score };
   }
   if (best) report.petId = best.pet.id;
   await db.put('found', report);

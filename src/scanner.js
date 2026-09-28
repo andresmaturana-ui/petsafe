@@ -7,7 +7,7 @@
 //
 // Modo "identify" (encontré): una ráfaga rápida desde el frente.
 
-import { SIZE, embed, average, warmUp, quality, consistency, CONSISTENCY_MIN } from './biometrics.js';
+import { SIZE, embed, average, warmUp, quality, consistency } from './biometrics.js';
 import { esc } from './ui.js';
 
 export const ENROLL_STEPS = [
@@ -46,7 +46,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
         <button class="btn primary big" data-act="scan" disabled>${esc(label)}</button>
         <label class="btn ghost">
           ${enroll ? 'Usar fotos de la galería' : 'Usar una foto'}
-          <input type="file" accept="image/*" ${enroll ? 'multiple' : 'capture="environment"'} hidden>
+          <input type="file" accept="image/*" ${enroll ? 'multiple' : ''} hidden>
         </label>
       </div>
       ${enroll ? '<p class="muted small center">Consejo: toma cada foto desde un ángulo distinto. Así la app la reconoce aunque la encuentren de lado o con otra luz.</p>' : ''}
@@ -153,10 +153,9 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     }
     if (enroll) {
       // ¿Todas las capturas son del mismo animal?
-      const model = shots[0].emb.model;
-      const scores = consistency(shots.map((s) => s.emb));
+      const { scores, min } = consistency(shots.map((s) => s.emb));
       const worst = scores.indexOf(Math.min(...scores));
-      if (scores[worst] < (CONSISTENCY_MIN[model] ?? 0.8) && shots.length > 2) {
+      if (scores[worst] < min && shots.length > 2) {
         shots.splice(worst, 1);
         refresh();
         status.textContent = `⚠️ La captura ${worst + 1} no se parece a las demás (¿otro animal o mal ángulo?). Tómala de nuevo.`;
@@ -203,8 +202,8 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     $('.scan-frame').classList.add('done');
     const embs = shots.map((s) => s.emb);
     const known = embs[0].looksLikePet !== null;
-    const scores = consistency(embs);
-    const level = !enroll ? null : Math.min(...scores) >= (CONSISTENCY_MIN[embs[0].model] ?? 0.8) + 0.1 ? 'Excelente' : 'Buena';
+    const { scores, min } = consistency(embs);
+    const level = !enroll ? null : Math.min(...scores) >= min + 0.1 ? 'Excelente' : 'Buena';
     status.textContent = enroll ? `¡Biometría registrada! Calidad: ${level}` : '¡Listo!';
     onDone({
       photo: shots[0].photo,

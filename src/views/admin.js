@@ -77,7 +77,7 @@ async function alertas(panel, { refresh }) {
           <img src="${esc(f.photo)}" alt="">
           <span>
             <strong>${f.petId ? `Coincide con ${esc(petName(f.petId) || '?')}` : 'Sin coincidencia'}</strong>
-            <small>${esc(f.finderName)} · ${timeAgo(f.createdAt)} · ${f.status === 'open' ? '🟠 Abierto' : '⚪ Cerrado'}</small>
+            <small>${esc(f.finderName)} · ${timeAgo(f.createdAt)} · ${f.status === 'open' ? '🟠 Abierto' : '⚪ Cerrado'}${f.bestScore != null ? ` · parecido máx. ${Math.round(f.bestScore * 100)}%` : ''}</small>
           </span>
           <span class="row-actions">
             <button class="btn small" data-toggle="${f.id}">${f.status === 'open' ? 'Cerrar' : 'Reabrir'}</button>
