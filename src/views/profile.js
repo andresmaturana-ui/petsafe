@@ -1,9 +1,10 @@
-import { saveUser, listUsers, switchUser, myPets, removeMyPet } from '../data.js';
+import { saveUser, listUsers, switchUser, myPets, removeMyPet, CLOUD } from '../data.js';
 import { askPermission, notificationsSupported } from '../notify.js';
 import { esc, toast, go } from '../ui.js';
 
 export default async function profile(el, _params, { user, refresh }) {
-  const [users, pets] = await Promise.all([listUsers(), user ? myPets(user) : []]);
+  // Con Supabase cada celular es un usuario; cambiar de usuario es solo para pruebas locales.
+  const [users, pets] = await Promise.all([CLOUD ? [] : listUsers(), user ? myPets(user) : []]);
   const others = users.filter((u) => u.id !== user?.id);
   const perm = notificationsSupported() ? Notification.permission : 'unsupported';
 
@@ -42,7 +43,7 @@ export default async function profile(el, _params, { user, refresh }) {
         </div>` : ''}
 
       <div class="card">
-        <button class="btn ghost" id="newuser">Agregar otro usuario</button>
+        ${CLOUD ? '' : '<button class="btn ghost" id="newuser">Agregar otro usuario</button>'}
         <a class="btn ghost" href="#/admin">Administrador</a>
       </div>` : ''}`;
 

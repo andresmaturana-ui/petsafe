@@ -1,4 +1,4 @@
-import { reportFound } from '../data.js';
+import { reportFound, CLOUD } from '../data.js';
 import { mountScanner } from '../scanner.js';
 import { pickPoint } from '../map.js';
 import { esc, getLocation } from '../ui.js';
@@ -88,13 +88,15 @@ export default async function found(el, _params, { user }) {
   });
 }
 
-// Pistas mientras los datos viven solo en este navegador (prototipo).
+// Pistas para entender por qué no hubo coincidencia (prototipo).
 function diagnostic(compared, ownMatch, bestScore) {
   if (ownMatch) {
     return `<p class="note">Se parece a <strong>${esc(ownMatch)}</strong>, que es tu propia mascota. Para probar, cambia a otro usuario en Perfil.</p>`;
   }
   if (!compared) {
-    return '<p class="note">En este navegador no hay mascotas de otros usuarios. Por ahora los registros se guardan solo en el dispositivo donde se hicieron.</p>';
+    return CLOUD
+      ? '<p class="note">Todavía no hay mascotas registradas por otros usuarios.</p>'
+      : '<p class="note">En este navegador no hay mascotas de otros usuarios. Por ahora los registros se guardan solo en el dispositivo donde se hicieron.</p>';
   }
   return `<p class="note">Comparamos con ${compared} mascota${compared === 1 ? '' : 's'}. Parecido más alto: ${Math.round((bestScore || 0) * 100)}%.</p>`;
 }

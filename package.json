@@ -16,6 +16,7 @@
   },
   "homepage": "https://github.com/andresmaturana-ui/petsafe#readme",
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "@tensorflow-models/mobilenet": "^2.1.1",
     "@tensorflow/tfjs": "^4.22.0",
     "leaflet": "^1.9.4"

@@ -1,6 +1,7 @@
 import {
   allPets, savePet, allFound, saveFound, deleteFound, listUsers, notify, notifyAll,
   latestSuccesses, deleteSuccess, commentsFor, deleteComment, addSuccess, markRecovered,
+  CLOUD, isAdmin, claimAdmin,
 } from '../data.js';
 import { esc, timeAgo, toast, changed } from '../ui.js';
 
@@ -9,7 +10,9 @@ import { esc, timeAgo, toast, changed } from '../ui.js';
 const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || '1234';
 
 export default async function admin(el, _params, ctx) {
-  if (sessionStorage.getItem('petsafe-admin') !== 'ok') return login(el, ctx);
+  if (CLOUD ? !(await isAdmin()) : sessionStorage.getItem('petsafe-admin') !== 'ok') {
+    return CLOUD ? claim(el, ctx) : login(el, ctx);
+  }
 
   const tab = sessionStorage.getItem('petsafe-admin-tab') || 'alertas';
   el.innerHTML = `
@@ -31,6 +34,21 @@ export default async function admin(el, _params, ctx) {
 
   const panel = el.querySelector('#panel');
   await ({ alertas, mensajes, casos })[tab](panel, ctx);
+}
+
+// Con Supabase el permiso vive en el servidor: el primer usuario que lo pide
+// queda como administrador (tabla admins).
+function claim(el, { refresh }) {
+  el.innerHTML = `
+    <div class="card">
+      <h1>Administrador 🔐</h1>
+      <p>El primer usuario que toque este botón queda como administrador de Pet Safe. Después, nadie más puede tomarlo desde la app.</p>
+      <button class="btn primary big" id="claim">Soy el administrador</button>
+    </div>`;
+  el.querySelector('#claim').addEventListener('click', async () => {
+    if (await claimAdmin()) refresh();
+    else toast('Ya hay un administrador. Pídele acceso.', 'bad');
+  });
 }
 
 function login(el, { refresh }) {

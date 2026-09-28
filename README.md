@@ -34,9 +34,22 @@ La cámara y las notificaciones requieren HTTPS (o `localhost`). Al hacer push a
   cada ángulo guardado. Es un modelo genérico: sirve para probar el flujo,
   pero para producción conviene entrenar uno específico de caras de perros y gatos. Si el modelo no se puede
   descargar, se usa un descriptor simple de color (mucho menos preciso).
-- **Datos**: se guardan en el navegador (IndexedDB, `src/db.js`). Para que funcione entre distintos celulares
-  hay que conectar un backend (Supabase o Firebase) detrás de las mismas funciones de `src/data.js`.
-  Mientras tanto, en *Perfil → Agregar otro usuario* se puede simular al dueño y a quien encuentra en un mismo celular.
+- **Datos**: con Supabase configurado (`VITE_SUPABASE_URL` y `VITE_SUPABASE_KEY` en `.env.production`) se
+  comparten entre celulares (`src/data-remote.js`); si no, se guardan en el navegador (IndexedDB,
+  `src/data-local.js`) y en *Perfil → Agregar otro usuario* se simula al dueño y a quien encuentra en un mismo celular.
+
+## Supabase
+
+1. Crear el proyecto y activar *Authentication → Sign In / Providers → Allow anonymous sign-ins*.
+2. Pegar `supabase/schema.sql` en *SQL Editor* y ejecutarlo (se puede repetir sin problemas). Crea las tablas,
+   las reglas de seguridad y las funciones de búsqueda biométrica (pgvector).
+3. Poner la *Project URL* y la clave *publishable/anon* en `.env.production`. Son públicas por diseño; nunca usar
+   la clave *secret/service_role* en la app.
+4. El primer usuario que entra a *Administrador* y toca "Soy el administrador" queda como admin.
+
+Quien encuentra una mascota nunca puede leer datos del dueño: la comparación biométrica y la respuesta con los
+cuidados ocurren en la base de datos (`report_found`), y las reglas RLS solo dejan ver cada aviso a quien lo hizo,
+al dueño de la mascota que coincidió y al administrador.
 - **Notificaciones**: se muestran con el Service Worker del dispositivo. El Service Worker ya escucha `push`;
   falta el servidor que envíe Web Push al celular del dueño.
 - **Búsqueda de pago**: pendiente para una versión futura.
