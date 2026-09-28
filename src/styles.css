@@ -204,10 +204,15 @@ img { max-width: 100%; }
 }
 .scan-frame.done .scan-ring circle { stroke: var(--green); }
 .scan-hint {
-  position: absolute; left: 12%; right: 12%; bottom: 14%;
-  text-align: center; color: #fff; font-size: 0.8rem; font-weight: 700;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  width: 100%; text-align: center; padding: 10px 14px;
+  background: var(--cream); border: 2px solid var(--sun); border-radius: 16px;
 }
+.scan-hint small {
+  display: block; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--coral-dark);
+}
+.scan-hint span { display: block; font-size: 1.3rem; font-weight: 800; line-height: 1.25; color: var(--text); }
+.scan-hint[hidden] { display: none; }
 .scan-status { font-weight: 700; text-align: center; margin: 0; }
 .scan-actions { display: grid; gap: 8px; width: 100%; }
 .scan-actions label.btn { cursor: pointer; }
