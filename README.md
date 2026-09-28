@@ -64,3 +64,8 @@ al dueño de la mascota que coincidió y al administrador.
 - **Notificaciones**: se muestran con el Service Worker del dispositivo. El Service Worker ya escucha `push`;
   falta el servidor que envíe Web Push al celular del dueño.
 - **Búsqueda de pago**: pendiente para una versión futura.
+
+## Licencia
+
+AGPL-3.0 (ver `LICENSE`). El detector de cabezas se entrena con Ultralytics YOLO, que usa esta misma licencia:
+quien publique una versión modificada de la app debe compartir su código.

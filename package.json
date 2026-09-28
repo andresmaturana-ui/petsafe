@@ -28,5 +28,6 @@
     "workbox-strategies": "^7.4.1"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "license": "AGPL-3.0-only"
 }
