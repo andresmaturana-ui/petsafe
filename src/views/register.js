@@ -20,7 +20,7 @@ export default async function register(el, _params, { user }) {
           <option value="">Elige…</option>
           ${Object.entries(SPECIES).map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}
         </select></label>
-        <label>3. Raza<input name="breed" list="breeds" placeholder="Ej: Labrador, Siamés o Mestizo" autocomplete="off"></label>
+        <label>3. Raza<input name="breed" list="breeds" placeholder="Ej: Mestizo (quiltro), Labrador o Siamés" autocomplete="off"></label>
         <datalist id="breeds"></datalist>
         <label>4. Nombre del dueño<input name="ownerName" required value="${esc(user.name)}"></label>
         <label>5. Enfermedades<textarea name="diseases" rows="2" placeholder="Ej: alergia al pollo, epilepsia (o 'ninguna')"></textarea></label>

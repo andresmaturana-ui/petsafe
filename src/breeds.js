@@ -5,7 +5,7 @@ export const SPECIES = { perro: 'Perro', gato: 'Gato', otro: 'Otro' };
 
 const BREEDS = {
   perro: [
-    'Mestizo', 'Beagle', 'Bichón frisé', 'Border collie', 'Bóxer', 'Bulldog francés', 'Bulldog inglés',
+    'Mestizo (quiltro)', 'Beagle', 'Bichón frisé', 'Border collie', 'Bóxer', 'Bulldog francés', 'Bulldog inglés',
     'Chihuahua', 'Cocker spaniel', 'Dachshund (salchicha)', 'Doberman', 'Fox terrier', 'Golden retriever',
     'Husky siberiano', 'Jack Russell terrier', 'Labrador retriever', 'Maltés', 'Pastor alemán',
     'Pastor australiano', 'Pequinés', 'Pinscher', 'Pit bull', 'Poodle', 'Pomerania', 'Pug', 'Rottweiler',
