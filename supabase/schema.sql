@@ -36,6 +36,11 @@ create table if not exists public.pets (
   created_at timestamptz not null default now()
 );
 
+-- Tipo (perro, gato, otro o '' si no se sabe) y raza: ayudan a descartar
+-- candidatos en la búsqueda.
+alter table public.pets add column if not exists species text not null default '';
+alter table public.pets add column if not exists breed text not null default '';
+
 -- Huellas biométricas: una fila por captura (y el promedio). Nadie las lee
 -- directamente; solo las funciones de búsqueda.
 create table if not exists public.pet_samples (
@@ -63,6 +68,8 @@ create table if not exists public.found_reports (
   best_score real,
   created_at timestamptz not null default now()
 );
+
+alter table public.found_reports add column if not exists species text not null default '';
 
 create table if not exists public.found_samples (
   id bigint generated always as identity primary key,
@@ -194,17 +201,30 @@ language sql stable security definer set search_path = public, extensions as $$
 $$;
 revoke execute on function public.pet_scores(jsonb) from public, anon, authenticated;
 
+-- Un gato nunca es la mascota de un aviso de perro. Si alguno no sabe o es
+-- "otro", se compara igual. Mismo criterio que sameSpecies() en data-local.js.
+create or replace function public.same_species(a text, b text) returns boolean
+language sql immutable as $$
+  select coalesce(a, '') in ('', 'otro') or coalesce(b, '') in ('', 'otro') or a = b;
+$$;
+
 -- ---------- Acciones de la app ----------
 
+-- Versiones anteriores, sin tipo ni raza.
+drop function if exists public.register_pet(text, text, text, text, text, jsonb);
+drop function if exists public.report_found(text, jsonb, double precision, double precision, text, text);
+
 create or replace function public.register_pet(
-  p_name text, p_owner_name text, p_diseases text, p_vaccines text, p_photo text, p_bio jsonb
+  p_name text, p_owner_name text, p_diseases text, p_vaccines text, p_photo text, p_bio jsonb,
+  p_species text default '', p_breed text default ''
 ) returns uuid
 language plpgsql security definer set search_path = public, extensions as $$
 declare new_id uuid;
 begin
   if auth.uid() is null then raise exception 'Sin sesión'; end if;
-  insert into pets (owner_id, name, owner_name, diseases, vaccines, photo)
-  values (auth.uid(), p_name, p_owner_name, coalesce(p_diseases, ''), coalesce(p_vaccines, ''), p_photo)
+  insert into pets (owner_id, name, owner_name, diseases, vaccines, photo, species, breed)
+  values (auth.uid(), p_name, p_owner_name, coalesce(p_diseases, ''), coalesce(p_vaccines, ''), p_photo,
+          coalesce(p_species, ''), left(coalesce(p_breed, ''), 80))
   returning id into new_id;
   insert into pet_samples (pet_id, kind, dino, mobilenet, basic)
   select new_id, s.kind, s.dino, s.mobilenet, s.basic from bio_samples(p_bio) s;
@@ -214,7 +234,8 @@ end $$;
 -- "Encontré una mascota". A quien la encontró solo se le devuelven los
 -- cuidados (vacunas y enfermedades), nunca datos del dueño.
 create or replace function public.report_found(
-  p_photo text, p_bio jsonb, p_lat double precision, p_lng double precision, p_name text, p_phone text
+  p_photo text, p_bio jsonb, p_lat double precision, p_lng double precision, p_name text, p_phone text,
+  p_species text default ''
 ) returns jsonb
 language plpgsql security definer set search_path = public, extensions as $$
 declare
@@ -223,14 +244,15 @@ declare
 begin
   if auth.uid() is null then raise exception 'Sin sesión'; end if;
 
-  insert into found_reports (finder_id, finder_name, finder_phone, photo, lat, lng)
-  values (auth.uid(), p_name, p_phone, p_photo, p_lat, p_lng) returning id into r_id;
+  insert into found_reports (finder_id, finder_name, finder_phone, photo, lat, lng, species)
+  values (auth.uid(), p_name, p_phone, p_photo, p_lat, p_lng, coalesce(p_species, '')) returning id into r_id;
   insert into found_samples (found_id, kind, dino, mobilenet, basic)
   select r_id, s.kind, s.dino, s.mobilenet, s.basic from bio_samples(p_bio) s;
 
   create temp table if not exists _scores (pet_id uuid, score real, model text, nose real) on commit drop;
   delete from _scores;
-  insert into _scores select * from pet_scores(p_bio);
+  insert into _scores select s.* from pet_scores(p_bio) s join pets p on p.id = s.pet_id
+  where same_species(p.species, p_species);
 
   select p.name into own_name from _scores s join pets p on p.id = s.pet_id
   where p.owner_id = auth.uid() and is_pet_match(s.score, s.model, s.nose) order by s.score desc limit 1;
@@ -275,6 +297,7 @@ begin
       max(1 - (ps.mobilenet <=> fs.mobilenet)) filter (where fs.kind = 'nose') as nm
     from found_samples fs
     join found_reports fr on fr.id = fs.found_id and fr.status = 'open' and (fr.pet_id is null or fr.pet_id = p_pet)
+      and same_species(fr.species, (select species from pets where id = p_pet))
     join ps on ps.kind = fs.kind
     group by fs.found_id
   )

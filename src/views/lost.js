@@ -1,5 +1,6 @@
 import { myPets, reportLost } from '../data.js';
 import { esc, go, changed } from '../ui.js';
+import { describe } from '../breeds.js';
 
 // "Perdí mi mascota": activa el aviso y busca en los avisos de "encontré".
 export default async function lost(el, _params, { user }) {
@@ -24,7 +25,7 @@ export default async function lost(el, _params, { user }) {
         ${pets.map((p) => `
           <button class="pick" data-id="${p.id}">
             <img src="${esc(p.photo)}" alt="">
-            <span><strong>${esc(p.name)}</strong><small>${p.status === 'lost' ? 'Aviso activo · buscar otra vez' : 'En casa'}</small></span>
+            <span><strong>${esc(p.name)}</strong><small>${[describe(p), p.status === 'lost' ? 'Aviso activo · buscar otra vez' : 'En casa'].filter(Boolean).map(esc).join(' · ')}</small></span>
           </button>`).join('')}
       </div>
     </div>

@@ -29,11 +29,13 @@ export const listUsers = () => db.all('users');
 
 // ---------- Mascotas ----------
 
-export async function registerPet(owner, { name, ownerName, diseases, vaccines, photo, biometric }) {
+export async function registerPet(owner, { name, species = '', breed = '', ownerName, diseases, vaccines, photo, biometric }) {
   return db.put('pets', {
     id: uid('p_'),
     ownerId: owner.id,
     name,
+    species,
+    breed,
     ownerName,
     diseases,
     vaccines,
@@ -73,6 +75,7 @@ export async function reportLost(pet) {
   const found = (await db.all('found')).filter((f) => f.status === 'open' && (!f.petId || f.petId === pet.id));
   let best = null;
   for (const f of found) {
+    if (!sameSpecies(pet.species, f.species)) continue;
     const { score, match } = compare(pet.biometric, f.biometric);
     if (match && (!best || score > best.score)) best = { report: f, score };
   }
@@ -113,7 +116,7 @@ export async function markRecovered(pet, story = '') {
  * mascota registrada, avisa al dueño. Al que la encontró solo se le devuelven
  * los cuidados (vacunas y enfermedades), nunca datos del dueño.
  */
-export async function reportFound(finder, { photo, biometric, lat, lng, finderName, finderPhone }) {
+export async function reportFound(finder, { photo, biometric, lat, lng, species = '', finderName, finderPhone }) {
   const report = {
     id: uid('f_'),
     finderId: finder.id,
@@ -123,6 +126,7 @@ export async function reportFound(finder, { photo, biometric, lat, lng, finderNa
     biometric,
     lat,
     lng,
+    species,
     status: 'open',
     createdAt: now(),
   };
@@ -131,6 +135,7 @@ export async function reportFound(finder, { photo, biometric, lat, lng, finderNa
   let compared = 0;
   let ownMatch = null;
   for (const pet of await db.all('pets')) {
+    if (!sameSpecies(pet.species, species)) continue;
     const { score, match } = compare(pet.biometric, biometric);
     // Una mascota propia no se "encuentra"; se informa para no confundir.
     if (pet.ownerId === finder.id) {
@@ -151,6 +156,12 @@ export async function reportFound(finder, { photo, biometric, lat, lng, finderNa
     ownMatch,
     care: best ? { diseases: best.pet.diseases, vaccines: best.pet.vaccines } : null,
   };
+}
+
+// Un gato nunca es la mascota de un aviso de perro. Si alguno no sabe o es
+// "otro", se compara igual. Mismo criterio que same_species() en schema.sql.
+function sameSpecies(a, b) {
+  return !a || !b || a === 'otro' || b === 'otro' || a === b;
 }
 
 export const getFound = (id) => db.get('found', id);

@@ -4,6 +4,7 @@ import {
   CLOUD, isAdmin, claimAdmin, listContacts, markContactRead, deleteContact,
 } from '../data.js';
 import { esc, timeAgo, toast, changed } from '../ui.js';
+import { SPECIES, describe } from '../breeds.js';
 
 // PIN de prototipo. En producción el acceso de administrador debe
 // validarse en el servidor con un rol de usuario.
@@ -81,7 +82,7 @@ async function alertas(panel, { refresh }) {
       ${lost.length ? `<ul class="admin-list">${lost.map((p) => `
         <li>
           <img src="${esc(p.photo)}" alt="">
-          <span><strong>${esc(p.name)}</strong><small>Dueño: ${esc(userName(p.ownerId))} · ${timeAgo(p.lostAt)}</small></span>
+          <span><strong>${esc(p.name)}</strong><small>${describe(p) ? `${esc(describe(p))} · ` : ''}Dueño: ${esc(userName(p.ownerId))} · ${timeAgo(p.lostAt)}</small></span>
           <span class="row-actions">
             <button class="btn small" data-edit="${p.id}">Editar</button>
             <button class="btn small ghost" data-home="${p.id}">Quitar aviso</button>
@@ -338,7 +339,7 @@ async function datos(panel, { refresh }) {
     return `<li><span><strong>${esc(u.firstName ? `${u.firstName} ${u.lastName}` : u.name)}</strong>
       <small>📞 ${esc(u.phone)}${u.email ? ` · ✉️ ${esc(u.email)}` : ''}</small>
       ${u.address ? `<small>🏠 ${esc(u.address)}</small>` : ''}
-      <small>🐾 ${own.length ? own.map((p) => `${esc(p.name)}${p.status === 'lost' ? ' (perdida)' : ''}`).join(', ') : 'Sin mascotas'}</small></span>
+      <small>🐾 ${own.length ? own.map((p) => `${esc(p.name)}${describe(p) ? ` (${esc(describe(p))})` : ''}${p.status === 'lost' ? ' (perdida)' : ''}`).join(', ') : 'Sin mascotas'}</small></span>
       <button type="button" class="btn small" data-msg="${esc(u.id)}">Mensaje</button></li>`;
   }, (el) => {
     el.querySelectorAll('[data-msg]').forEach((b) => b.addEventListener('click', () => {
@@ -350,14 +351,14 @@ async function datos(panel, { refresh }) {
   panel.querySelector('#csv').addEventListener('click', () => {
     const header = [
       'Nombres', 'Apellidos', 'Teléfono', 'Correo', 'Dirección', 'Usuario desde',
-      'Mascota', 'Nombre del dueño (registro)', 'Estado', 'Enfermedades', 'Vacunas', 'Mascota registrada',
+      'Mascota', 'Tipo', 'Raza', 'Nombre del dueño (registro)', 'Estado', 'Enfermedades', 'Vacunas', 'Mascota registrada',
     ];
     const person = (u) => [u?.firstName || u?.name, u?.lastName, u?.phone, u?.email, u?.address, day(u?.createdAt)];
     const rows = pets.map((p) => [
       ...person(users.find((u) => u.id === p.ownerId)),
-      p.name, p.ownerName, p.status === 'lost' ? 'Perdida' : 'En casa', p.diseases, p.vaccines, day(p.createdAt),
+      p.name, SPECIES[p.species] || '', p.breed || '', p.ownerName, p.status === 'lost' ? 'Perdida' : 'En casa', p.diseases, p.vaccines, day(p.createdAt),
     ]);
-    for (const u of users) if (!pets.some((p) => p.ownerId === u.id)) rows.push([...person(u), '', '', '', '', '', '']);
+    for (const u of users) if (!pets.some((p) => p.ownerId === u.id)) rows.push([...person(u), '', '', '', '', '', '', '', '']);
     download(`petsafe-datos-${day(new Date().toISOString())}.csv`, toCsv([header, ...rows]));
   });
 }

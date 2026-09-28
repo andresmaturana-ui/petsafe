@@ -64,9 +64,9 @@ export async function listUsers() {
 
 // ---------- Mascotas ----------
 
-export async function registerPet(_owner, { name, ownerName, diseases, vaccines, photo, biometric }) {
+export async function registerPet(_owner, { name, species = '', breed = '', ownerName, diseases, vaccines, photo, biometric }) {
   const id = await run(sb().rpc('register_pet', {
-    p_name: name, p_owner_name: ownerName, p_diseases: diseases, p_vaccines: vaccines, p_photo: photo, p_bio: biometric,
+    p_name: name, p_species: species, p_breed: breed, p_owner_name: ownerName, p_diseases: diseases, p_vaccines: vaccines, p_photo: photo, p_bio: biometric,
   }));
   return { id, name };
 }
@@ -103,9 +103,9 @@ export async function markRecovered(pet, story = '') {
 
 // ---------- Mascotas encontradas ----------
 
-export async function reportFound(_finder, { photo, biometric, lat, lng, finderName, finderPhone }) {
+export async function reportFound(_finder, { photo, biometric, lat, lng, species = '', finderName, finderPhone }) {
   const r = await run(sb().rpc('report_found', {
-    p_photo: photo, p_bio: biometric, p_lat: lat, p_lng: lng, p_name: finderName, p_phone: finderPhone,
+    p_species: species, p_photo: photo, p_bio: biometric, p_lat: lat, p_lng: lng, p_name: finderName, p_phone: finderPhone,
   }));
   return {
     report: { id: r.id, bestScore: r.best_score },

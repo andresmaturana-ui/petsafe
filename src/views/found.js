@@ -19,6 +19,11 @@ export default async function found(el, _params, { user }) {
       <p class="muted">Usamos tu ubicación; toca el mapa para ajustarla.</p>
       <div class="map" id="map"></div>
       <form class="form" id="foundform">
+        <label>¿Qué es?<select name="species">
+          <option value="">No estoy seguro</option>
+          <option value="perro">Un perro</option>
+          <option value="gato">Un gato</option>
+        </select></label>
         <label>Tu nombre<input name="finderName" required value="${esc(user.name)}"></label>
         <label>Tu teléfono (WhatsApp)<input name="finderPhone" type="tel" required value="${esc(user.phone)}"></label>
         <p class="muted small">Solo el dueño verá tu nombre y teléfono para contactarte.</p>
@@ -56,6 +61,7 @@ export default async function found(el, _params, { user }) {
       biometric: scan.biometric,
       lat: point.lat,
       lng: point.lng,
+      species: f.get('species'),
       finderName: f.get('finderName').trim(),
       finderPhone: f.get('finderPhone').trim(),
     });
