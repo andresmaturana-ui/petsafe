@@ -26,7 +26,12 @@ export const ENROLL_STEPS = [
   NOSE_STEP,
 ];
 
-const IDENTIFY_STEPS = [{ text: 'Centra la cara de la mascota en el círculo', kind: 'face' }, NOSE_STEP];
+// Dos ángulos: si una foto sale movida o de lado, la otra todavía puede coincidir.
+const IDENTIFY_STEPS = [
+  { text: 'Centra la cara de la mascota en el círculo', kind: 'face' },
+  { text: 'Otra desde un ángulo un poco distinto', kind: 'face' },
+  NOSE_STEP,
+];
 
 const SKIPPED = { skipped: true };
 
@@ -65,8 +70,8 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
         <button class="btn ghost" data-act="torch" hidden>🔦 Encender linterna</button>
         <button class="btn ghost" data-act="skip" hidden>Omitir la nariz</button>
         <label class="btn ghost">
-          ${enroll ? 'Usar fotos de la galería' : 'Usar una foto'}
-          <input type="file" accept="image/*" ${enroll ? 'multiple' : ''} hidden>
+          Usar fotos de la galería
+          <input type="file" accept="image/*" multiple hidden>
         </label>
       </div>
       ${enroll ? '<p class="muted small center">Consejo: toma cada foto desde un ángulo distinto. Así la app la reconoce aunque la encuentren de lado o con otra luz. La última es la nariz: sus pliegues son únicos, como una huella digital.</p>' : ''}
@@ -116,7 +121,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     const n = next();
     hint.textContent = steps[n]?.text || '';
     skip.hidden = !steps[n]?.optional;
-    btn.textContent = kindAt(n) === 'nose' ? 'Capturar la nariz' : enroll && count() ? `Capturar ${n + 1} de ${faceSteps}` : label;
+    btn.textContent = kindAt(n) === 'nose' ? 'Capturar la nariz' : count() ? `Capturar ${n + 1} de ${faceSteps}` : label;
     setNoseMode(kindAt(n) === 'nose' && !done);
   }
 
@@ -240,7 +245,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     const n = next();
     if (n !== -1) {
       if (kindAt(n) === 'nose') status.textContent = '✅ Captura lista. Ahora la nariz bien de cerca: sus pliegues son únicos, como una huella digital. Si no se deja, puedes omitirla.';
-      else if (enroll) status.textContent = `✅ Captura lista. Ahora la ${n + 1}: ${steps[n].text.toLowerCase()}.`;
+      else status.textContent = `✅ Captura lista. Ahora la ${n + 1}: ${steps[n].text.toLowerCase()}.`;
       return;
     }
     if (enroll) {
