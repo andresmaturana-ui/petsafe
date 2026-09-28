@@ -249,6 +249,7 @@ export function quality(canvas, { nose = false } = {}) {
   let problem = null;
   if (brightness < (nose ? 20 : 45)) problem = 'Está muy oscuro, busca más luz.';
   else if (brightness > 225) problem = 'Hay demasiada luz, evita el sol directo o el flash.';
+  else if (nose && sharpness < 35) problem = 'La nariz salió movida o desenfocada. Aléjate un poco (unos 10 cm) y mantén el celular quieto.';
   else if (sharpness < 25) problem = 'Salió borrosa, mantén el celular quieto.';
   return { ok: !problem, brightness, sharpness, problem };
 }

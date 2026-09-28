@@ -13,7 +13,9 @@
 import { SIZE, embed, locatePet, average, warmUp, quality, consistency } from './biometrics.js';
 import { esc } from './ui.js';
 
-const NOSE_STEP = { text: 'La nariz muy de cerca, que se vean sus pliegues', kind: 'nose', optional: true };
+const NOSE_STEP = { text: 'A unos 10 cm: que la nariz llene el círculo', kind: 'nose', optional: true };
+// La nariz se recorta más cerrada (60% del cuadro) para que se vean los pliegues.
+const NOSE_ZOOM = 0.6;
 
 export const ENROLL_STEPS = [
   { text: 'De frente, a la altura de sus ojos', kind: 'face' },
@@ -60,6 +62,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
       </div>
       <div class="scan-actions">
         <button class="btn primary big" data-act="scan" disabled>${esc(label)}</button>
+        <button class="btn ghost" data-act="torch" hidden>🔦 Encender linterna</button>
         <button class="btn ghost" data-act="skip" hidden>Omitir la nariz</button>
         <label class="btn ghost">
           ${enroll ? 'Usar fotos de la galería' : 'Usar una foto'}
@@ -75,9 +78,13 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
   const hint = $('.scan-hint');
   const btn = $('[data-act=scan]');
   const skip = $('[data-act=skip]');
+  const torch = $('[data-act=torch]');
   const file = $('input[type=file]');
   const warning = $('.scan-warning');
   let stream;
+  let track; // pista de video de la cámara
+  let noseMode = false;
+  let torchOn = false;
   let done = false;
   let busy = false;
   let touched = false; // ya se mostró un mensaje de captura
@@ -110,7 +117,33 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     hint.textContent = steps[n]?.text || '';
     skip.hidden = !steps[n]?.optional;
     btn.textContent = kindAt(n) === 'nose' ? 'Capturar la nariz' : enroll && count() ? `Capturar ${n + 1} de ${faceSteps}` : label;
+    setNoseMode(kindAt(n) === 'nose' && !done);
   }
+
+  // Paso de la nariz: máxima resolución de la cámara, vista más cerrada y
+  // linterna disponible. Si el celular no lo permite, sigue igual.
+  async function setNoseMode(on) {
+    if (on === noseMode) return;
+    noseMode = on;
+    $('.scan-frame').classList.toggle('nose', on);
+    const caps = track?.getCapabilities?.() || {};
+    torch.hidden = !on || !caps.torch;
+    if (!on && torchOn) await setTorch(false);
+    try {
+      await track?.applyConstraints(on
+        ? { width: { ideal: 3840 }, height: { ideal: 2160 } }
+        : { width: { ideal: 1280 }, height: { ideal: 720 } });
+    } catch { /* se queda con la resolución actual */ }
+  }
+
+  async function setTorch(on) {
+    try {
+      await track.applyConstraints({ advanced: [{ torch: on }] });
+      torchOn = on;
+    } catch { /* sin linterna */ }
+    torch.textContent = torchOn ? '🔦 Apagar linterna' : '🔦 Encender linterna';
+  }
+  torch.addEventListener('click', () => setTorch(!torchOn));
 
   async function startCamera() {
     try {
@@ -120,6 +153,12 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
       });
       video.srcObject = stream;
       await video.play();
+      track = stream.getVideoTracks()[0];
+      noseMode = false;
+      // Enfoque automático continuo, importante para la nariz de cerca.
+      if (track.getCapabilities?.().focusMode?.includes('continuous')) {
+        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+      }
       if (!touched) status.textContent = enroll
         ? `Vamos a tomar ${total} capturas desde distintos ángulos.`
         : 'Acércate a la cara y presiona escanear';
@@ -134,12 +173,15 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
   }
   startCamera();
 
-  // Toma una ráfaga corta y se queda con el cuadro más nítido.
+  // Toma una ráfaga corta y se queda con el cuadro más nítido. La nariz usa
+  // la resolución completa de la cámara y una ráfaga más larga, porque el
+  // perro se mueve y de cerca cuesta enfocar.
   async function captureBest() {
     let best = null;
-    const zoom = kindAt(next()) === 'nose' ? 0.6 : 0.8;
-    for (let i = 0; i < 3; i++) {
-      const frame = snapshot(video, video.videoWidth, video.videoHeight);
+    const nose = kindAt(next()) === 'nose';
+    const zoom = nose ? NOSE_ZOOM : 0.8;
+    for (let i = 0; i < (nose ? 6 : 3); i++) {
+      const frame = snapshot(video, video.videoWidth, video.videoHeight, nose ? Infinity : FRAME);
       const { sharpness } = quality(centerCrop(frame, zoom));
       if (!best || sharpness > best.sharpness) best = { frame, sharpness };
       await new Promise((r) => setTimeout(r, 120));
@@ -165,7 +207,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     // Para la cara se busca al perro o gato y se recorta a su alrededor. La
     // nariz de cerca no se ve como "un perro" para el detector: va al centro.
     const box = nose ? null : await locatePet(frame);
-    const canvas = box ? cropAround(frame, box) : centerCrop(frame, nose ? 0.6 : zoom);
+    const canvas = box ? cropAround(frame, box) : centerCrop(frame, nose ? NOSE_ZOOM : zoom);
     const q = quality(canvas, { nose });
     if (!q.ok) {
       status.textContent = `⚠️ ${q.problem} Intenta de nuevo.`;
@@ -238,7 +280,8 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     btn.disabled = true;
     for (const f of [...file.files].slice(0, total - count())) {
       const img = await loadImage(URL.createObjectURL(f));
-      if (await consider(snapshot(img, img.naturalWidth, img.naturalHeight), 1)) await afterShot();
+      const max = kindAt(next()) === 'nose' ? Infinity : FRAME;
+      if (await consider(snapshot(img, img.naturalWidth, img.naturalHeight, max), 1)) await afterShot();
       if (next() === -1) break;
     }
     file.value = '';
@@ -273,6 +316,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
 
   function finish() {
     done = true;
+    setNoseMode(false);
     stop();
     video.hidden = true;
     const faces = shots.filter((s, i) => kindAt(i) === 'face');
@@ -307,10 +351,10 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
   return { stop };
 }
 
-// Copia la imagen completa (cámara o foto) a un canvas de hasta 1024 px.
+// Copia la imagen completa (cámara o foto) a un canvas de hasta `max` px.
 const FRAME = 1024;
-function snapshot(source, w, h) {
-  const k = Math.min(1, FRAME / Math.max(w, h));
+function snapshot(source, w, h, max = FRAME) {
+  const k = Math.min(1, max / Math.max(w, h));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w * k);
   canvas.height = Math.round(h * k);
@@ -332,13 +376,30 @@ function cropAround(frame, { x, y, w, h }) {
 }
 
 function square(frame, sx, sy, side) {
+  // Al achicar mucho de una vez se pierden los detalles finos (los pliegues
+  // de la nariz): se reduce a la mitad por pasos.
+  while (side > SIZE * 2) {
+    frame = half(frame);
+    sx /= 2; sy /= 2; side /= 2;
+  }
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = SIZE;
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#808080';
   ctx.fillRect(0, 0, SIZE, SIZE);
   const k = SIZE / side;
   ctx.drawImage(frame, -sx * k, -sy * k, frame.width * k, frame.height * k);
+  return canvas;
+}
+
+function half(frame) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(frame.width / 2));
+  canvas.height = Math.max(1, Math.round(frame.height / 2));
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
