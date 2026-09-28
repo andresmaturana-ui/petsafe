@@ -20,6 +20,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -299,3 +300,16 @@ img { max-width: 100%; }
 .toast.show { transform: translate(-50%, 0); opacity: 1; }
 .toast.ok { background: var(--green-dark); }
 .toast.bad { background: var(--coral-dark); }
+
+/* Registro guiado */
+.shots { display: flex; gap: 8px; justify-content: center; }
+.shot {
+  width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center;
+  background: var(--cream) center / cover no-repeat; color: var(--muted); font-weight: 800;
+  border: 2px solid var(--line);
+}
+.shot.current { border-color: var(--orange); color: var(--coral-dark); }
+.shot.ok { border-color: var(--green); color: transparent; }
+.scan-warning { width: 100%; background: #fff3d6; border-radius: 16px; padding: 12px 14px; }
+.scan-warning p { margin: 0 0 8px; font-weight: 700; }
+.scan-warning .row { display: flex; gap: 8px; }

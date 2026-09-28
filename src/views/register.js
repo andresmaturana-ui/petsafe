@@ -8,7 +8,7 @@ export default async function register(el, _params, { user }) {
     <div class="card">
       <div class="steps"><span class="on">1 · Escanear</span><span>2 · Datos</span></div>
       <h1>Registrar mascota</h1>
-      <p>Escanea la cara de tu mascota de frente, con buena luz, hasta que quede registrada su biometría.</p>
+      <p>Tomaremos 5 capturas de su cara desde distintos ángulos, con buena luz. Puedes usar la cámara o fotos de tu galería: las dos pasan por el mismo control de calidad.</p>
       <div id="scanner"></div>
     </div>
     <div class="card" id="details" hidden>
@@ -24,8 +24,8 @@ export default async function register(el, _params, { user }) {
 
   let scan = null;
   mountScanner(el.querySelector('#scanner'), {
-    samples: 5,
-    label: 'Escanear cara',
+    mode: 'enroll',
+    label: 'Empezar escaneo',
     onDone(result) {
       scan = result;
       el.querySelector('.steps span:last-child').classList.add('on');

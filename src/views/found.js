@@ -31,7 +31,7 @@ export default async function found(el, _params, { user }) {
   let point = null;
 
   mountScanner(el.querySelector('#scanner'), {
-    samples: 3,
+    mode: 'identify',
     label: 'Escanear mascota',
     async onDone(result) {
       scan = result;

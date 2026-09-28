@@ -11,7 +11,9 @@
 
 export const SIZE = 224;
 
-const THRESHOLDS = { mobilenet: 0.78, basic: 0.9 };
+// Umbral de coincidencia. Se compara contra la captura más parecida, por eso es
+// algo más exigente que un promedio simple.
+const THRESHOLDS = { mobilenet: 0.8, basic: 0.92 };
 
 let modelPromise;
 
@@ -56,9 +58,13 @@ export async function embed(canvas) {
   const loaded = await loadModel();
   if (loaded) {
     const { tf, model } = loaded;
+    // Se promedia la imagen con su espejo: la huella queda estable aunque la
+    // mascota gire un poco la cabeza.
     const { vector, logits } = tf.tidy(() => {
-      const emb = model.infer(canvas, true);
-      const log = model.infer(canvas, false);
+      const img = tf.browser.fromPixels(canvas);
+      const flipped = tf.reverse(img, 1);
+      const emb = tf.add(model.infer(img, true), model.infer(flipped, true));
+      const log = model.infer(img, false);
       return { vector: emb.dataSync().slice(), logits: log.dataSync().slice() };
     });
     // MobileNet v2 tiene 1001 clases (la 0 es "fondo").
@@ -73,20 +79,85 @@ export async function embed(canvas) {
   return { model: 'basic', vector: normalize(basicDescriptor(canvas)), looksLikePet: null };
 }
 
-/** Promedia varias capturas en una sola huella biométrica. */
+/**
+ * Arma la plantilla biométrica con varias capturas: guarda el promedio y
+ * también cada captura, para comparar contra el ángulo más parecido.
+ */
 export function average(embeddings) {
   const model = embeddings[0].model;
   const same = embeddings.filter((e) => e.model === model);
   const out = new Array(same[0].vector.length).fill(0);
   for (const e of same) e.vector.forEach((v, i) => (out[i] += v));
-  return { model, vector: normalize(out) };
+  return { model, vector: normalize(out), samples: same.map((e) => e.vector) };
 }
 
+const dot = (a, b) => {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+};
+
+/**
+ * Similitud entre dos plantillas (0 a 1). Usa la mejor combinación entre el
+ * promedio y cada captura individual.
+ */
 export function similarity(a, b) {
   if (!a || !b || a.model !== b.model || a.vector.length !== b.vector.length) return 0;
-  let dot = 0;
-  for (let i = 0; i < a.vector.length; i++) dot += a.vector[i] * b.vector[i];
-  return dot;
+  const as = [a.vector, ...(a.samples || [])];
+  const bs = [b.vector, ...(b.samples || [])];
+  let best = 0;
+  for (const x of as) for (const y of bs) best = Math.max(best, dot(x, y));
+  return best;
+}
+
+/**
+ * Qué tan parecida es cada captura al resto (0 a 1). Una captura con valor
+ * bajo probablemente es de otro animal o salió mal.
+ */
+export function consistency(embeddings) {
+  return embeddings.map((e, i) => {
+    const others = embeddings.filter((_, j) => j !== i);
+    if (!others.length) return 1;
+    return others.reduce((acc, o) => acc + dot(e.vector, o.vector), 0) / others.length;
+  });
+}
+
+// Solo detecta errores gruesos (otro animal, foto equivocada).
+export const CONSISTENCY_MIN = { mobilenet: 0.6, basic: 0.6 };
+
+/**
+ * Revisa luz y nitidez de una captura.
+ * Devuelve { ok, brightness (0-255), sharpness, problem }.
+ */
+export function quality(canvas) {
+  const n = 128;
+  const small = document.createElement('canvas');
+  small.width = small.height = n;
+  const ctx = small.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(canvas, 0, 0, n, n);
+  const { data } = ctx.getImageData(0, 0, n, n);
+  const g = new Float32Array(n * n);
+  let sum = 0;
+  for (let i = 0; i < n * n; i++) {
+    g[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+    sum += g[i];
+  }
+  const brightness = sum / (n * n);
+  // Varianza del laplaciano: valores bajos = foto borrosa.
+  let lsum = 0, lsq = 0, count = 0;
+  for (let y = 1; y < n - 1; y++) {
+    for (let x = 1; x < n - 1; x++) {
+      const i = y * n + x;
+      const l = g[i - 1] + g[i + 1] + g[i - n] + g[i + n] - 4 * g[i];
+      lsum += l; lsq += l * l; count++;
+    }
+  }
+  const sharpness = lsq / count - (lsum / count) ** 2;
+  let problem = null;
+  if (brightness < 45) problem = 'Está muy oscuro, busca más luz.';
+  else if (brightness > 225) problem = 'Hay demasiada luz, evita el sol directo o el flash.';
+  else if (sharpness < 25) problem = 'Salió borrosa, mantén el celular quieto.';
+  return { ok: !problem, brightness, sharpness, problem };
 }
 
 export function isMatch(score, model) {
