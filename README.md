@@ -40,6 +40,10 @@ La cámara y las notificaciones requieren HTTPS (o `localhost`). Al hacer push a
   hay que calibrarlo con pruebas reales. Próximo paso: ajuste fino con metric learning
   (ArcFace). Si los modelos no se pueden descargar, se usa un descriptor simple de
   color (mucho menos preciso).
+- **Servidor de reconocimiento (opcional)**: `server/` hace la detección y la huella en un servidor (un Space
+  gratis de Hugging Face o un VPS), así el celular no descarga los modelos. Se activa con `VITE_BIO_SERVER` en
+  `.env.production`; si el servidor no responde, la app vuelve a hacerlo en el celular. Da las mismas huellas que
+  el celular (mismos modelos ONNX), así que los registros de uno y otro se pueden comparar.
 - **Entrenar el detector de cabezas**: abrir
   [`training/entrenar_detector.ipynb` en Colab](https://colab.research.google.com/github/andresmaturana-ui/petsafe/blob/main/training/entrenar_detector.ipynb),
   elegir GPU y *Ejecutar todo*. Usa Oxford-IIIT Pet (cajas de cabezas) y Ultralytics YOLO11n (AGPL-3.0); al final

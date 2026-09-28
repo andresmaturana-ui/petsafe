@@ -5,3 +5,7 @@ export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || '';
 
 export const CLOUD = Boolean(SUPABASE_URL && SUPABASE_KEY);
+
+// Servidor de reconocimiento (server/, un Space gratis de Hugging Face). Si
+// está, el celular no descarga los modelos; si falla, se usan en el celular.
+export const BIO_SERVER = (import.meta.env.VITE_BIO_SERVER || '').replace(/\/+$/, '');

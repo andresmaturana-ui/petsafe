@@ -11,12 +11,16 @@
 // 3. Búsqueda: los vectores se comparan en la base con pgvector
 //    (supabase/schema.sql) o en el celular en modo local.
 //
-// Los modelos corren en el celular con transformers.js y se descargan una vez
-// (unos 35 MB) y quedan guardados. Si no se pueden descargar, se usa un
+// Si hay servidor de reconocimiento (server/, VITE_BIO_SERVER), el celular le
+// envía la foto y recibe la caja y la huella, sin descargar modelos. Si no hay
+// o no responde, los modelos corren en el celular con transformers.js: se
+// descargan una vez y quedan guardados. Si no se pueden descargar, se usa un
 // descriptor simple de color y textura para que la app siga funcionando.
 //
 // Además de la cara se puede guardar una foto de la nariz: sus pliegues son
 // únicos en cada perro, como una huella digital.
+
+import { BIO_SERVER } from './config.js';
 
 export const SIZE = 224;
 
@@ -77,10 +81,49 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-/** Empieza a descargar los modelos en segundo plano. */
+/** Despierta el servidor o empieza a descargar los modelos en segundo plano. */
 export function warmUp() {
-  dino();
-  headModel().then((head) => head || detector());
+  server().then((up) => {
+    if (up) return;
+    dino();
+    headModel().then((head) => head || detector());
+  });
+}
+
+// ---------- Servidor de reconocimiento ----------
+
+// El Space gratis se duerme si nadie lo usa y tarda hasta un minuto en
+// despertar. Si no responde, se usa el celular y se reintenta más tarde.
+let serverPromise = null, serverDownUntil = 0;
+function server() {
+  if (!BIO_SERVER || Date.now() < serverDownUntil) return Promise.resolve(false);
+  serverPromise ??= (async () => {
+    const waking = setTimeout(() => window.dispatchEvent(new CustomEvent('petsafe:server-waking')), 4000);
+    try {
+      const res = await fetch(BIO_SERVER + '/health', { signal: AbortSignal.timeout(90000) });
+      if (!res.ok) throw new Error(res.status);
+      return true;
+    } finally {
+      clearTimeout(waking);
+    }
+  })().catch(serverDown);
+  return serverPromise;
+}
+
+function serverDown(err) {
+  console.warn('Servidor de reconocimiento no disponible', err);
+  serverPromise = null;
+  serverDownUntil = Date.now() + 2 * 60000;
+  return false;
+}
+
+async function ask(path, canvas, type = 'image/jpeg') {
+  const blob = await new Promise((ok) => canvas.toBlob(ok, type, 0.92));
+  const body = new FormData();
+  body.append('image', blob, type === 'image/png' ? 'foto.png' : 'foto.jpg');
+  const res = await fetch(BIO_SERVER + path, { method: 'POST', body, signal: AbortSignal.timeout(30000) });
+  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  return res.json();
 }
 
 // Detector de cabezas (YOLO exportado a ONNX, una clase). Corre con el mismo
@@ -152,6 +195,13 @@ async function locateHead(canvas) {
  * ninguna, o null si no hay detector disponible.
  */
 export async function locatePet(canvas) {
+  if (await server()) {
+    try {
+      return (await ask('/detect', canvas)).box || false;
+    } catch (err) {
+      serverDown(err);
+    }
+  }
   const head = await locateHead(canvas);
   if (head) return head;
   const body = await locateBody(canvas);
@@ -177,6 +227,15 @@ async function locateBody(canvas) {
  */
 export async function embed(canvas) {
   const basic = normalize(basicDescriptor(canvas));
+  if (await server()) {
+    try {
+      // PNG: el servidor recibe exactamente los mismos píxeles.
+      const { dino } = await ask('/embed', canvas, 'image/png');
+      if (dino?.length) return { dino, basic };
+    } catch (err) {
+      serverDown(err);
+    }
+  }
   const [t, model] = await Promise.all([lib().catch(() => null), dino()]);
   if (!t || !model) return { dino: null, basic };
   // Se suma la imagen con su espejo: la huella queda estable aunque la

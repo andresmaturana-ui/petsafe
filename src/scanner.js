@@ -105,6 +105,10 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     }
   };
   window.addEventListener('petsafe:model-progress', onModel);
+  const onWaking = () => {
+    if (analyzing) status.textContent = 'Despertando el servidor de reconocimiento (puede tardar un minuto)…';
+  };
+  window.addEventListener('petsafe:server-waking', onWaking);
   const setProgress = () => $('.scan-ring circle').style.setProperty('--p', count() / total);
 
   function refresh() {
@@ -352,6 +356,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
   window.addEventListener('hashchange', () => {
     stop();
     window.removeEventListener('petsafe:model-progress', onModel);
+    window.removeEventListener('petsafe:server-waking', onWaking);
   }, { once: true });
   return { stop };
 }
