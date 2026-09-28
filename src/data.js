@@ -52,6 +52,17 @@ export const allPets = () => db.all('pets');
 export const savePet = (pet) => db.put('pets', pet);
 export const deletePet = (id) => db.delete('pets', id);
 
+/** El dueño elimina su mascota: se borra su biometría y se desligan los avisos. */
+export async function removeMyPet(user, petId) {
+  const pet = await db.get('pets', petId);
+  if (!pet || pet.ownerId !== user.id) return false;
+  for (const f of await db.all('found')) {
+    if (f.petId === petId) await db.put('found', { ...f, petId: null });
+  }
+  await db.delete('pets', petId);
+  return true;
+}
+
 /** "Perdí mi mascota": activa el aviso y busca entre los avisos de "encontré". */
 export async function reportLost(pet) {
   pet.status = 'lost';

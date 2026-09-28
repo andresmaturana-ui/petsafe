@@ -1,4 +1,4 @@
-import { saveUser, listUsers, switchUser, myPets } from '../data.js';
+import { saveUser, listUsers, switchUser, myPets, removeMyPet } from '../data.js';
 import { askPermission, notificationsSupported } from '../notify.js';
 import { esc, toast, go } from '../ui.js';
 
@@ -28,7 +28,8 @@ export default async function profile(el, _params, { user, refresh }) {
       <div class="card">
         <h2>Mis mascotas</h2>
         ${pets.length ? `<ul class="pet-list">${pets.map((p) => `
-          <li><img src="${esc(p.photo)}" alt=""><span><strong>${esc(p.name)}</strong><small>${p.status === 'lost' ? '🔴 Perdida' : '🟢 En casa'}</small></span></li>`).join('')}</ul>`
+          <li><img src="${esc(p.photo)}" alt=""><span><strong>${esc(p.name)}</strong><small>${p.status === 'lost' ? '🔴 Perdida' : '🟢 En casa'}</small></span>
+          <button class="btn small danger" data-delpet="${p.id}" aria-label="Eliminar ${esc(p.name)}">Eliminar</button></li>`).join('')}</ul>`
         : '<p>Aún no registras mascotas.</p>'}
         <a class="btn secondary" href="#/registrar">Registrar mascota</a>
       </div>
@@ -53,6 +54,16 @@ export default async function profile(el, _params, { user, refresh }) {
     toast('¡Listo!', 'ok');
     user ? refresh() : go('#/');
   });
+
+  el.querySelectorAll('[data-delpet]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const pet = pets.find((p) => p.id === b.dataset.delpet);
+      if (!confirm(`¿Eliminar a ${pet.name}? Se borrarán sus datos y su biometría, y no se podrá deshacer.`)) return;
+      await removeMyPet(user, pet.id);
+      toast(`${pet.name} fue eliminada`);
+      refresh();
+    }),
+  );
 
   el.querySelector('#perm')?.addEventListener('click', async () => {
     await askPermission();

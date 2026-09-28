@@ -227,6 +227,7 @@ img { max-width: 100%; }
 
 .pet-list, .admin-list, .inbox, .comments { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 10px; }
 .pet-list li, .admin-list li, .admin-list-row { display: flex; align-items: center; gap: 12px; }
+.pet-list li > span { flex: 1; }
 .admin-list li { flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .admin-list li > span:nth-child(2) { flex: 1; min-width: 140px; }
 .row-actions { display: flex; gap: 6px; }
