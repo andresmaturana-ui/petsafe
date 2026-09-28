@@ -305,12 +305,18 @@ img { max-width: 100%; }
 /* Registro guiado */
 .shots { display: flex; gap: 8px; justify-content: center; }
 .shot {
-  width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center;
-  background: var(--cream) center / cover no-repeat; color: var(--muted); font-weight: 800;
-  border: 2px solid var(--line);
+  position: relative; width: 52px; height: 52px; padding: 0; border-radius: 14px; display: grid; place-items: center;
+  background: var(--cream) center / cover no-repeat; color: var(--muted); font: inherit; font-weight: 800;
+  border: 2px solid var(--line); cursor: default;
 }
 .shot.current { border-color: var(--orange); color: var(--coral-dark); }
-.shot.ok { border-color: var(--green); color: transparent; }
+.shot.ok { border-color: var(--green); color: transparent; cursor: pointer; }
+.shot.ok::after {
+  content: '✕'; position: absolute; top: -7px; right: -7px; width: 20px; height: 20px;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--coral); color: #fff; font-size: 0.7rem; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.shots-help { margin: 0; }
 .scan-warning { width: 100%; background: #fff3d6; border-radius: 16px; padding: 12px 14px; }
 .scan-warning p { margin: 0 0 8px; font-weight: 700; }
 .scan-warning .row { display: flex; gap: 8px; }

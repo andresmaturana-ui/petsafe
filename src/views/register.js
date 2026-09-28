@@ -34,6 +34,11 @@ export default async function register(el, _params, { user }) {
       details.scrollIntoView({ behavior: 'smooth' });
       details.querySelector('input').focus({ preventScroll: true });
     },
+    onReset() {
+      scan = null;
+      el.querySelector('.steps span:last-child').classList.remove('on');
+      el.querySelector('#details').hidden = true;
+    },
   });
 
   el.querySelector('#petform').addEventListener('submit', async (e) => {

@@ -22,11 +22,13 @@ export const ENROLL_STEPS = [
  * Monta el escáner dentro de `root`.
  * `onDone({ photo, biometric, looksLikePet, quality })` se llama al terminar.
  */
-export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDone }) {
+export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDone, onReset }) {
   warmUp();
   const enroll = mode === 'enroll';
   const total = enroll ? ENROLL_STEPS.length : 1;
-  const shots = []; // { photo, emb, q }
+  const shots = new Array(total).fill(null); // { photo, emb, q } por ángulo
+  const count = () => shots.filter(Boolean).length;
+  const next = () => shots.indexOf(null);
 
   root.innerHTML = `
     <div class="scanner">
@@ -36,7 +38,8 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
         <svg class="scan-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" pathLength="100"/></svg>
         <div class="scan-hint"></div>
       </div>
-      ${enroll ? `<div class="shots">${ENROLL_STEPS.map((_, i) => `<span class="shot" data-i="${i}">${i + 1}</span>`).join('')}</div>` : ''}
+      ${enroll ? `<div class="shots">${ENROLL_STEPS.map((step, i) => `<button type="button" class="shot" data-i="${i}" title="${esc(step)}"><span>${i + 1}</span></button>`).join('')}</div>
+      <p class="muted small center shots-help" hidden>¿Alguna no quedó bien? Tócala para quitarla y tomarla de nuevo.</p>` : ''}
       <p class="scan-status" aria-live="polite">Preparando cámara…</p>
       <div class="scan-warning" hidden>
         <p></p>
@@ -60,11 +63,12 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
   const file = $('input[type=file]');
   const warning = $('.scan-warning');
   let stream;
+  let done = false;
   let busy = false;
   let touched = false; // ya se mostró un mensaje de captura
 
   const stop = () => stream?.getTracks().forEach((t) => t.stop());
-  const setProgress = () => $('.scan-ring circle').style.setProperty('--p', shots.length / total);
+  const setProgress = () => $('.scan-ring circle').style.setProperty('--p', count() / total);
 
   function refresh() {
     setProgress();
@@ -73,16 +77,18 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
         const s = shots[i];
         el.classList.toggle('ok', !!s);
         el.style.backgroundImage = s ? `url("${s.photo}")` : '';
-        el.classList.toggle('current', i === shots.length);
+        el.classList.toggle('current', i === next());
+        el.setAttribute('aria-label', s ? `Quitar captura ${i + 1}` : `Captura ${i + 1}: ${ENROLL_STEPS[i]}`);
       });
-      hint.textContent = ENROLL_STEPS[shots.length] || '';
-      btn.textContent = shots.length ? `Capturar ${shots.length + 1} de ${total}` : label;
+      $('.shots-help').hidden = !count();
+      hint.textContent = ENROLL_STEPS[next()] || '';
+      btn.textContent = count() ? `Capturar ${next() + 1} de ${total}` : label;
     } else {
       hint.textContent = 'Centra la cara de la mascota en el círculo';
     }
   }
 
-  (async () => {
+  async function startCamera() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -101,7 +107,8 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
       video.hidden = true;
     }
     refresh();
-  })();
+  }
+  startCamera();
 
   // Toma una ráfaga corta y se queda con la captura más nítida.
   async function captureBest() {
@@ -132,7 +139,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
         return false;
       }
     }
-    shots.push(shot);
+    shots[next()] = shot;
     return true;
   }
 
@@ -147,16 +154,16 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
 
   async function afterShot() {
     refresh();
-    if (shots.length < total) {
-      if (enroll) status.textContent = `✅ Captura ${shots.length} lista. Ahora: ${ENROLL_STEPS[shots.length].toLowerCase()}.`;
+    if (next() !== -1) {
+      if (enroll) status.textContent = `✅ Captura lista. Ahora la ${next() + 1}: ${ENROLL_STEPS[next()].toLowerCase()}.`;
       return;
     }
     if (enroll) {
       // ¿Todas las capturas son del mismo animal?
       const { scores, min } = consistency(shots.map((s) => s.emb));
       const worst = scores.indexOf(Math.min(...scores));
-      if (scores[worst] < min && shots.length > 2) {
-        shots.splice(worst, 1);
+      if (scores[worst] < min && total > 2) {
+        shots[worst] = null;
         refresh();
         status.textContent = `⚠️ La captura ${worst + 1} no se parece a las demás (¿otro animal o mal ángulo?). Tómala de nuevo.`;
         return;
@@ -172,25 +179,51 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     const { canvas, q } = await captureBest();
     if (await consider(canvas, q)) await afterShot();
     busy = false;
-    btn.disabled = shots.length >= total;
+    btn.disabled = next() === -1 || video.hidden;
   });
 
   file.addEventListener('change', async () => {
     if (busy) return;
     busy = true;
     btn.disabled = true;
-    for (const f of [...file.files].slice(0, total - shots.length)) {
+    for (const f of [...file.files].slice(0, total - count())) {
       const img = await loadImage(URL.createObjectURL(f));
       const canvas = squareCrop(img, img.naturalWidth, img.naturalHeight, 1);
       if (await consider(canvas, quality(canvas))) await afterShot();
-      if (shots.length >= total) break;
+      if (next() === -1) break;
     }
     file.value = '';
     busy = false;
-    btn.disabled = shots.length >= total || video.hidden;
+    btn.disabled = next() === -1 || video.hidden;
   });
 
+  // Quitar una captura (de cámara o subida) para tomarla de nuevo.
+  root.querySelectorAll('.shot').forEach((el) =>
+    el.addEventListener('click', () => {
+      const i = Number(el.dataset.i);
+      if (busy || !shots[i]) return;
+      shots[i] = null;
+      if (done) reopen();
+      refresh();
+      touched = true;
+      status.textContent = `Toma de nuevo la captura ${i + 1}: ${ENROLL_STEPS[i].toLowerCase()}.`;
+    }),
+  );
+
+  function reopen() {
+    done = false;
+    $('.scan-frame').classList.remove('done');
+    $('.scan-preview').hidden = true;
+    hint.hidden = false;
+    btn.hidden = false;
+    file.closest('label').hidden = false;
+    video.hidden = false;
+    startCamera();
+    onReset?.();
+  }
+
   function finish() {
+    done = true;
     stop();
     video.hidden = true;
     const preview = $('.scan-preview');
