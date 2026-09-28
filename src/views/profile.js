@@ -21,7 +21,7 @@ export default async function profile(el, _params, { user, refresh }) {
     ${user ? `
       <div class="card">
         <h2>Notificaciones</h2>
-        <p>${perm === 'granted' ? '✅ Activadas en este celular.' : perm === 'denied' ? 'Bloqueadas. Actívalas desde la configuración del navegador.' : perm === 'unsupported' ? 'Este navegador no soporta notificaciones.' : 'Actívalas para saber al instante si encuentran a tu mascota.'}</p>
+        <p>${perm === 'granted' ? '✅ Activadas en este celular.' : perm === 'denied' ? 'Bloqueadas. Actívalas desde la configuración del navegador.' : perm === 'unsupported' ? unsupportedHelp() : 'Actívalas para saber al instante si encuentran a tu mascota.'}</p>
         ${perm === 'default' ? '<button class="btn secondary" id="perm">Activar notificaciones</button>' : ''}
       </div>
 
@@ -74,4 +74,14 @@ export default async function profile(el, _params, { user, refresh }) {
     await saveUser({ name, phone });
     go('#/');
   });
+}
+
+// Por qué no hay notificaciones y cómo conseguirlas.
+function unsupportedHelp() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (ios && !installed) {
+    return 'En iPhone las notificaciones solo funcionan con la app instalada: abre esta página en Safari, toca Compartir → "Agregar a pantalla de inicio" y entra desde el ícono de Pet Safe.';
+  }
+  return 'Aquí no se pueden activar. Abre la app directamente en Chrome o Safari (no dentro de otra app, como WhatsApp o Instagram) e instálala con "Agregar a pantalla de inicio".';
 }
