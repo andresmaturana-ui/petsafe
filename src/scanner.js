@@ -374,9 +374,10 @@ function centerCrop(frame, zoom) {
   return square(frame, (frame.width - side) / 2, (frame.height - side) / 2, side);
 }
 
-// Cuadrado alrededor de la mascota detectada, con un pequeño margen.
-function cropAround(frame, { x, y, w, h }) {
-  const side = Math.min(Math.max(w, h) * 1.1, Math.max(frame.width, frame.height));
+// Cuadrado alrededor de la mascota detectada, con un pequeño margen (algo
+// mayor para la cabeza, así entran las orejas).
+function cropAround(frame, { x, y, w, h, head }) {
+  const side = Math.min(Math.max(w, h) * (head ? 1.25 : 1.1), Math.max(frame.width, frame.height));
   return square(frame, x + w / 2 - side / 2, y + h / 2 - side / 2, side);
 }
 

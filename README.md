@@ -29,16 +29,22 @@ La cámara y las notificaciones requieren HTTPS (o `localhost`). Al hacer push a
 ## Estado del prototipo
 
 - **Reconocimiento facial** (`src/biometrics.js`), en el propio celular con transformers.js:
-  1. *Detección*: YOLOS-tiny (COCO) encuentra al perro o gato y se recorta a su alrededor.
+  1. *Detección*: un detector YOLO11n propio (`public/models/pet-head.onnx`) encuentra la cabeza y se recorta
+     justo la cara. Si ese archivo no está o no ve una cabeza, YOLOS-tiny (COCO) busca al animal completo.
   2. *Huella*: DINOv2-small convierte el recorte en un vector de 384 números (token CLS, con la imagen y su espejo).
   3. *Búsqueda*: similitud coseno con pgvector en Supabase (o en el navegador en modo local), contra cada ángulo guardado.
 
   Cada captura pasa un control de luz, nitidez y "¿es una mascota?"; al final se revisa que las 5 sean del mismo
   animal. También se guarda una foto de la nariz (opcional): si las narices se parecen mucho, alcanza con una cara
   algo menos parecida. Los modelos (~40 MB) se descargan la primera vez. El umbral de DINOv2 (0.78) es inicial y
-  hay que calibrarlo con pruebas reales. Próximos pasos: detector de cabeza entrenado (YOLO sobre Oxford-IIIT Pet) y
-  ajuste fino con metric learning (ArcFace). Si los modelos no se pueden descargar, se usa un descriptor simple de
+  hay que calibrarlo con pruebas reales. Próximo paso: ajuste fino con metric learning
+  (ArcFace). Si los modelos no se pueden descargar, se usa un descriptor simple de
   color (mucho menos preciso).
+- **Entrenar el detector de cabezas**: abrir
+  [`training/entrenar_detector.ipynb` en Colab](https://colab.research.google.com/github/andresmaturana-ui/petsafe/blob/main/training/entrenar_detector.ipynb),
+  elegir GPU y *Ejecutar todo*. Usa Oxford-IIIT Pet (cajas de cabezas) y Ultralytics YOLO11n (AGPL-3.0); al final
+  descarga `pet-head.onnx` (entrada 320x320, salida `[1, 5, 2100]`), que va en `public/models/`. Al activarlo cambia
+  el recorte de la cara, así que conviene registrar de nuevo las mascotas de prueba.
 - **Datos**: con Supabase configurado (`VITE_SUPABASE_URL` y `VITE_SUPABASE_KEY` en `.env.production`) se
   comparten entre celulares (`src/data-remote.js`); si no, se guardan en el navegador (IndexedDB,
   `src/data-local.js`) y en *Perfil → Agregar otro usuario* se simula al dueño y a quien encuentra en un mismo celular.

@@ -1,7 +1,7 @@
 // Service Worker: funciona sin conexión y muestra notificaciones.
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
-import { CacheFirst } from 'workbox-strategies';
+import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
 precacheAndRoute(self.__WB_MANIFEST);
@@ -12,6 +12,12 @@ cleanupOutdatedCaches();
 registerRoute(
   ({ url }) => url.host === 'cdn.jsdelivr.net' && /@huggingface\/transformers@|onnxruntime-web@/.test(url.pathname),
   new CacheFirst({ cacheName: 'model', plugins: [new ExpirationPlugin({ maxEntries: 20 })] }),
+);
+// Detector de cabezas propio: se usa guardado y se actualiza en segundo plano
+// cuando se publica uno nuevo.
+registerRoute(
+  ({ url }) => url.origin === self.location.origin && url.pathname.endsWith('/models/pet-head.onnx'),
+  new StaleWhileRevalidate({ cacheName: 'head-model' }),
 );
 registerRoute(
   ({ url }) => url.host.endsWith('tile.openstreetmap.org'),

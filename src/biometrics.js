@@ -1,7 +1,9 @@
 // Biometría facial de mascotas (PROTOTIPO).
 //
-// 1. Detección: un detector de objetos (YOLOS-tiny, entrenado en COCO) busca
-//    al perro o gato en la foto para recortar alrededor de él.
+// 1. Detección: un detector tipo YOLO entrenado para encontrar la cabeza de
+//    perros y gatos (public/models/pet-head.onnx, ver training/) recorta
+//    justo la cara. Si ese archivo no está, un detector general (YOLOS-tiny,
+//    entrenado en COCO) busca al animal completo y se recorta a su alrededor.
 // 2. Huella: DINOv2-small convierte el recorte en un vector de 384 números.
 //    Dos fotos de la misma mascota producen vectores parecidos (similitud
 //    coseno). Funciona sin entrenamiento extra; más adelante se puede ajustar
@@ -26,7 +28,7 @@ const THRESHOLDS = { dino: 0.78, mobilenet: 0.8, basic: 0.92 };
 const TRANSFORMERS = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js';
 const MODEL_OPTIONS = { dtype: 'q8', device: 'wasm' };
 
-let libPromise, dinoPromise, detectorPromise;
+let libPromise, dinoPromise, detectorPromise, headPromise;
 
 function lib() {
   libPromise ??= import(/* @vite-ignore */ TRANSFORMERS).then(
@@ -78,15 +80,85 @@ function withTimeout(promise, ms) {
 /** Empieza a descargar los modelos en segundo plano. */
 export function warmUp() {
   dino();
-  detector();
+  headModel().then((head) => head || detector());
+}
+
+// Detector de cabezas (YOLO exportado a ONNX, una clase). Corre con el mismo
+// ONNX Runtime que usa transformers.js, así el motor se descarga una sola vez.
+const HEAD_MODEL = 'models/pet-head.onnx';
+const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/';
+const HEAD = { size: 320, threshold: 0.4 };
+
+function headModel() {
+  headPromise ??= (async () => {
+    const res = await fetch(HEAD_MODEL);
+    // Sin modelo entrenado todavía: se usa el detector general.
+    if (!res.ok || !/octet|onnx/.test(res.headers.get('content-type') || 'application/octet-stream')) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const ort = await import(/* @vite-ignore */ ORT + 'ort.wasm.min.mjs');
+    ort.env.wasm.wasmPaths = { mjs: ORT + 'ort-wasm-simd-threaded.asyncify.mjs', wasm: ORT + 'ort-wasm-simd-threaded.asyncify.wasm' };
+    ort.env.wasm.numThreads = 1;
+    const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+    return { ort, session };
+  })().catch((err) => {
+    console.warn('Detector de cabezas no disponible', err);
+    return null;
+  });
+  return headPromise;
 }
 
 /**
- * Busca un perro o gato en la imagen. Devuelve la caja más segura
- * { x, y, w, h } en píxeles, false si no hay ninguno, o null si el detector
- * no está disponible.
+ * Busca la cabeza de un perro o gato. Devuelve { x, y, w, h, head: true },
+ * false si no ve ninguna, o null si el modelo no está.
+ */
+async function locateHead(canvas) {
+  const model = await headModel();
+  if (!model) return null;
+  const { ort, session } = model;
+  const n = HEAD.size;
+  // Se achica sin deformar y se rellena con gris, como en el entrenamiento.
+  const k = n / Math.max(canvas.width, canvas.height);
+  const w = Math.round(canvas.width * k), h = Math.round(canvas.height * k);
+  const dx = (n - w) / 2, dy = (n - h) / 2;
+  const box = document.createElement('canvas');
+  box.width = box.height = n;
+  const ctx = box.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = 'rgb(114,114,114)';
+  ctx.fillRect(0, 0, n, n);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(canvas, dx, dy, w, h);
+  const { data } = ctx.getImageData(0, 0, n, n);
+  const input = new Float32Array(3 * n * n);
+  for (let i = 0; i < n * n; i++) {
+    input[i] = data[i * 4] / 255;
+    input[n * n + i] = data[i * 4 + 1] / 255;
+    input[2 * n * n + i] = data[i * 4 + 2] / 255;
+  }
+  const feeds = { [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, n, n]) };
+  const out = (await session.run(feeds))[session.outputNames[0]];
+  // Salida de YOLO: [1, 5, N] con (cx, cy, ancho, alto, puntaje) por columna.
+  const count = out.dims[2], d = out.data;
+  let best = -1, score = HEAD.threshold;
+  for (let i = 0; i < count; i++) if (d[4 * count + i] > score) { score = d[4 * count + i]; best = i; }
+  if (best < 0) return false;
+  const bw = d[2 * count + best] / k, bh = d[3 * count + best] / k;
+  const cx = (d[best] - dx) / k, cy = (d[count + best] - dy) / k;
+  return { x: cx - bw / 2, y: cy - bh / 2, w: bw, h: bh, head: true };
+}
+
+/**
+ * Busca la mascota en la imagen: primero su cabeza y, si no se ve, el animal
+ * completo. Devuelve la caja más segura { x, y, w, h, head }, false si no hay
+ * ninguna, o null si no hay detector disponible.
  */
 export async function locatePet(canvas) {
+  const head = await locateHead(canvas);
+  if (head) return head;
+  const body = await locateBody(canvas);
+  return body ?? head;
+}
+
+async function locateBody(canvas) {
   const [t, det] = await Promise.all([lib().catch(() => null), detector()]);
   if (!t || !det) return null;
   const found = (await det(t.RawImage.fromCanvas(canvas), { threshold: 0.5 }))
