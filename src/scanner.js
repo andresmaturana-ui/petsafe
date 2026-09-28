@@ -5,18 +5,28 @@
 // que todas sean del mismo animal. Cámara y fotos pasan por los mismos
 // controles, así que ambas sirven igual.
 //
-// Modo "identify" (encontré): una ráfaga rápida desde el frente.
+// Modo "identify" (encontré): una captura de frente.
+//
+// En los dos modos el último paso es la nariz bien de cerca (huella nasal).
+// Se puede omitir si la mascota no se deja.
 
 import { SIZE, embed, average, warmUp, quality, consistency } from './biometrics.js';
 import { esc } from './ui.js';
 
+const NOSE_STEP = { text: 'La nariz muy de cerca, que se vean sus pliegues', kind: 'nose', optional: true };
+
 export const ENROLL_STEPS = [
-  'De frente, a la altura de sus ojos',
-  'Gira un poco hacia su izquierda',
-  'Gira un poco hacia su derecha',
-  'Más cerca: ojos y nariz',
-  'De frente otra vez, con otra luz si puedes',
+  { text: 'De frente, a la altura de sus ojos', kind: 'face' },
+  { text: 'Gira un poco hacia su izquierda', kind: 'face' },
+  { text: 'Gira un poco hacia su derecha', kind: 'face' },
+  { text: 'Más cerca: ojos y nariz', kind: 'face' },
+  { text: 'De frente otra vez, con otra luz si puedes', kind: 'face' },
+  NOSE_STEP,
 ];
+
+const IDENTIFY_STEPS = [{ text: 'Centra la cara de la mascota en el círculo', kind: 'face' }, NOSE_STEP];
+
+const SKIPPED = { skipped: true };
 
 /**
  * Monta el escáner dentro de `root`.
@@ -25,10 +35,13 @@ export const ENROLL_STEPS = [
 export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDone, onReset }) {
   warmUp();
   const enroll = mode === 'enroll';
-  const total = enroll ? ENROLL_STEPS.length : 1;
-  const shots = new Array(total).fill(null); // { photo, emb, q } por ángulo
+  const steps = enroll ? ENROLL_STEPS : IDENTIFY_STEPS;
+  const total = steps.length;
+  const faceSteps = steps.filter((s) => s.kind === 'face').length;
+  const shots = new Array(total).fill(null); // { photo, emb, q } por paso, o SKIPPED
   const count = () => shots.filter(Boolean).length;
   const next = () => shots.indexOf(null);
+  const kindAt = (i) => steps[i]?.kind;
 
   root.innerHTML = `
     <div class="scanner">
@@ -38,8 +51,8 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
         <svg class="scan-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" pathLength="100"/></svg>
         <div class="scan-hint"></div>
       </div>
-      ${enroll ? `<div class="shots">${ENROLL_STEPS.map((step, i) => `<button type="button" class="shot" data-i="${i}" title="${esc(step)}"><span>${i + 1}</span></button>`).join('')}</div>
-      <p class="muted small center shots-help" hidden>¿Alguna no quedó bien? Tócala para quitarla y tomarla de nuevo.</p>` : ''}
+      <div class="shots">${steps.map((step, i) => `<button type="button" class="shot" data-i="${i}" title="${esc(step.text)}"><span>${step.kind === 'nose' ? '👃' : i + 1}</span></button>`).join('')}</div>
+      <p class="muted small center shots-help" hidden>¿Alguna no quedó bien? Tócala para quitarla y tomarla de nuevo.</p>
       <p class="scan-status" aria-live="polite">Preparando cámara…</p>
       <div class="scan-warning" hidden>
         <p></p>
@@ -47,12 +60,13 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
       </div>
       <div class="scan-actions">
         <button class="btn primary big" data-act="scan" disabled>${esc(label)}</button>
+        <button class="btn ghost" data-act="skip" hidden>Omitir la nariz</button>
         <label class="btn ghost">
           ${enroll ? 'Usar fotos de la galería' : 'Usar una foto'}
           <input type="file" accept="image/*" ${enroll ? 'multiple' : ''} hidden>
         </label>
       </div>
-      ${enroll ? '<p class="muted small center">Consejo: toma cada foto desde un ángulo distinto. Así la app la reconoce aunque la encuentren de lado o con otra luz.</p>' : ''}
+      ${enroll ? '<p class="muted small center">Consejo: toma cada foto desde un ángulo distinto. Así la app la reconoce aunque la encuentren de lado o con otra luz. La última es la nariz: sus pliegues son únicos, como una huella digital.</p>' : ''}
     </div>`;
 
   const $ = (s) => root.querySelector(s);
@@ -60,6 +74,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
   const status = $('.scan-status');
   const hint = $('.scan-hint');
   const btn = $('[data-act=scan]');
+  const skip = $('[data-act=skip]');
   const file = $('input[type=file]');
   const warning = $('.scan-warning');
   let stream;
@@ -72,20 +87,19 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
 
   function refresh() {
     setProgress();
-    if (enroll) {
-      root.querySelectorAll('.shot').forEach((el, i) => {
-        const s = shots[i];
-        el.classList.toggle('ok', !!s);
-        el.style.backgroundImage = s ? `url("${s.photo}")` : '';
-        el.classList.toggle('current', i === next());
-        el.setAttribute('aria-label', s ? `Quitar captura ${i + 1}` : `Captura ${i + 1}: ${ENROLL_STEPS[i]}`);
-      });
-      $('.shots-help').hidden = !count();
-      hint.textContent = ENROLL_STEPS[next()] || '';
-      btn.textContent = count() ? `Capturar ${next() + 1} de ${total}` : label;
-    } else {
-      hint.textContent = 'Centra la cara de la mascota en el círculo';
-    }
+    root.querySelectorAll('.shot').forEach((el, i) => {
+      const s = shots[i];
+      el.classList.toggle('ok', !!s?.photo);
+      el.classList.toggle('skipped', s === SKIPPED);
+      el.style.backgroundImage = s?.photo ? `url("${s.photo}")` : '';
+      el.classList.toggle('current', i === next());
+      el.setAttribute('aria-label', s ? `Quitar captura ${i + 1}` : `Captura ${i + 1}: ${steps[i].text}`);
+    });
+    $('.shots-help').hidden = !count();
+    const n = next();
+    hint.textContent = steps[n]?.text || '';
+    skip.hidden = !steps[n]?.optional;
+    btn.textContent = kindAt(n) === 'nose' ? 'Capturar la nariz' : enroll && count() ? `Capturar ${n + 1} de ${faceSteps}` : label;
   }
 
   async function startCamera() {
@@ -113,9 +127,11 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
   // Toma una ráfaga corta y se queda con la captura más nítida.
   async function captureBest() {
     let best = null;
+    const nose = kindAt(next()) === 'nose';
     for (let i = 0; i < 3; i++) {
-      const canvas = squareCrop(video, video.videoWidth, video.videoHeight);
-      const q = quality(canvas);
+      // La nariz se recorta más cerrada para que se vean los pliegues.
+      const canvas = squareCrop(video, video.videoWidth, video.videoHeight, nose ? 0.6 : 0.8);
+      const q = quality(canvas, { nose });
       if (!best || (q.ok && !best.q.ok) || (q.ok === best.q.ok && q.sharpness > best.q.sharpness)) best = { canvas, q };
       await new Promise((r) => setTimeout(r, 120));
     }
@@ -132,7 +148,8 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     status.textContent = 'Analizando…';
     const emb = await embed(canvas);
     const shot = { photo: canvas.toDataURL('image/jpeg', 0.85), emb, q };
-    if (emb.looksLikePet === false) {
+    // Una nariz de cerca no se ve como "un perro" para el modelo: no se revisa.
+    if (kindAt(next()) === 'face' && emb.looksLikePet === false) {
       const keep = await askKeep('No logramos ver bien a una mascota en esta captura. Acércate más a su cara.');
       if (!keep) {
         status.textContent = 'Repite la captura.';
@@ -154,18 +171,21 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
 
   async function afterShot() {
     refresh();
-    if (next() !== -1) {
-      if (enroll) status.textContent = `✅ Captura lista. Ahora la ${next() + 1}: ${ENROLL_STEPS[next()].toLowerCase()}.`;
+    const n = next();
+    if (n !== -1) {
+      if (kindAt(n) === 'nose') status.textContent = '✅ Captura lista. Ahora la nariz bien de cerca: sus pliegues son únicos, como una huella digital. Si no se deja, puedes omitirla.';
+      else if (enroll) status.textContent = `✅ Captura lista. Ahora la ${n + 1}: ${steps[n].text.toLowerCase()}.`;
       return;
     }
     if (enroll) {
-      // ¿Todas las capturas son del mismo animal?
-      const { scores, min } = consistency(shots.map((s) => s.emb));
-      const worst = scores.indexOf(Math.min(...scores));
-      if (scores[worst] < min && total > 2) {
-        shots[worst] = null;
+      // ¿Todas las capturas de la cara son del mismo animal?
+      const faces = shots.map((s, i) => (kindAt(i) === 'face' ? i : -1)).filter((i) => i >= 0);
+      const { scores, min } = consistency(faces.map((i) => shots[i].emb));
+      const w = scores.indexOf(Math.min(...scores));
+      if (scores[w] < min && faces.length > 2) {
+        shots[faces[w]] = null;
         refresh();
-        status.textContent = `⚠️ La captura ${worst + 1} no se parece a las demás (¿otro animal o mal ángulo?). Tómala de nuevo.`;
+        status.textContent = `⚠️ La captura ${faces[w] + 1} no se parece a las demás (¿otro animal o mal ángulo?). Tómala de nuevo.`;
         return;
       }
     }
@@ -182,6 +202,13 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     btn.disabled = next() === -1 || video.hidden;
   });
 
+  skip.addEventListener('click', async () => {
+    if (busy || !steps[next()]?.optional) return;
+    shots[next()] = SKIPPED;
+    touched = true;
+    await afterShot();
+  });
+
   file.addEventListener('change', async () => {
     if (busy) return;
     busy = true;
@@ -189,7 +216,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     for (const f of [...file.files].slice(0, total - count())) {
       const img = await loadImage(URL.createObjectURL(f));
       const canvas = squareCrop(img, img.naturalWidth, img.naturalHeight, 1);
-      if (await consider(canvas, quality(canvas))) await afterShot();
+      if (await consider(canvas, quality(canvas, { nose: kindAt(next()) === 'nose' }))) await afterShot();
       if (next() === -1) break;
     }
     file.value = '';
@@ -206,7 +233,7 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
       if (done) reopen();
       refresh();
       touched = true;
-      status.textContent = `Toma de nuevo la captura ${i + 1}: ${ENROLL_STEPS[i].toLowerCase()}.`;
+      status.textContent = `Toma de nuevo la captura ${i + 1}: ${steps[i].text.toLowerCase()}.`;
     }),
   );
 
@@ -226,21 +253,25 @@ export function mountScanner(root, { mode = 'identify', label = 'Escanear', onDo
     done = true;
     stop();
     video.hidden = true;
+    const faces = shots.filter((s, i) => kindAt(i) === 'face');
+    const noses = shots.filter((s, i) => kindAt(i) === 'nose' && s !== SKIPPED);
     const preview = $('.scan-preview');
-    preview.src = shots[0].photo;
+    preview.src = faces[0].photo;
     preview.hidden = false;
     hint.hidden = true;
     btn.hidden = true;
     file.closest('label').hidden = true;
     $('.scan-frame').classList.add('done');
-    const embs = shots.map((s) => s.emb);
+    skip.hidden = true;
+    const embs = faces.map((s) => s.emb);
     const known = embs[0].looksLikePet !== null;
     const { scores, min } = consistency(embs);
-    const level = !enroll ? null : Math.min(...scores) >= min + 0.1 ? 'Excelente' : 'Buena';
-    status.textContent = enroll ? `¡Biometría registrada! Calidad: ${level}` : '¡Listo!';
+    const level = !enroll ? null : Math.min(...scores) >= min + 0.1 && noses.length ? 'Excelente' : 'Buena';
+    const noseNote = noses.length ? ' (cara y nariz)' : ' (sin nariz)';
+    status.textContent = enroll ? `¡Biometría registrada${noseNote}! Calidad: ${level}` : '¡Listo!';
     onDone({
-      photo: shots[0].photo,
-      biometric: average(embs),
+      photo: faces[0].photo,
+      biometric: average(embs, noses.map((s) => s.emb)),
       looksLikePet: known ? embs.some((e) => e.looksLikePet) : null,
       quality: level,
     });

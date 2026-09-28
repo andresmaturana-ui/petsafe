@@ -8,7 +8,7 @@ export default async function register(el, _params, { user }) {
     <div class="card">
       <div class="steps"><span class="on">1 · Escanear</span><span>2 · Datos</span></div>
       <h1>Registrar mascota</h1>
-      <p>Tomaremos 5 capturas de su cara desde distintos ángulos, con buena luz. Puedes usar la cámara o fotos de tu galería: las dos pasan por el mismo control de calidad.</p>
+      <p>Tomaremos 5 capturas de su cara desde distintos ángulos y una de su nariz bien de cerca (sus pliegues son únicos, como una huella digital), con buena luz. Puedes usar la cámara o fotos de tu galería: las dos pasan por el mismo control de calidad.</p>
       <div id="scanner"></div>
     </div>
     <div class="card" id="details" hidden>

@@ -11,7 +11,7 @@ export default async function found(el, _params, { user }) {
   el.innerHTML = `
     <div class="card">
       <h1>Encontré una mascota</h1>
-      <p>Escanea su cara. Si está registrada, le avisamos a su dueño de inmediato.</p>
+      <p>Escanea su cara y, si se deja, su nariz de cerca. Si está registrada, le avisamos a su dueño de inmediato.</p>
       <div id="scanner"></div>
     </div>
     <div class="card" id="details" hidden>

@@ -1,5 +1,8 @@
 // Biometría facial de mascotas (PROTOTIPO).
 //
+// Además de la cara se puede guardar una foto de la nariz: sus pliegues son
+// únicos en cada perro, como una huella digital.
+//
 // Se usa MobileNet v2 (TensorFlow.js) en el navegador para convertir la foto
 // de la cara de la mascota en un vector numérico ("embedding"). Dos fotos de
 // la misma mascota producen vectores parecidos; se comparan con similitud
@@ -88,8 +91,15 @@ function commonModel(items) {
 /**
  * Arma la plantilla biométrica con varias capturas: guarda, por descriptor,
  * el promedio y cada captura, para comparar contra el ángulo más parecido.
+ * Las fotos de la nariz (huella nasal) van aparte, en `nose`.
  */
-export function average(embeddings) {
+export function average(faces, noses = []) {
+  const template = averageOf(faces);
+  if (noses.length) template.nose = averageOf(noses);
+  return template;
+}
+
+function averageOf(embeddings) {
   const template = {};
   for (const m of MODELS) {
     if (!embeddings.every((e) => e[m])) continue;
@@ -113,12 +123,10 @@ const dot = (a, b) => {
 };
 
 /**
- * Compara dos plantillas. Usa la mejor combinación entre el promedio y cada
- * captura individual. Devuelve { score (0 a 1), model, match }.
+ * Compara dos plantillas de cara (el mejor par entre el promedio y cada
+ * captura). Devuelve { score (0 a 1), model, match }.
  */
-export function compare(a, b) {
-  a = upgrade(a);
-  b = upgrade(b);
+function compareFace(a, b) {
   const model = commonModel([a, b]);
   if (!model) return { score: 0, model: null, match: false };
   const as = [a[model].vector, ...(a[model].samples || [])];
@@ -127,6 +135,25 @@ export function compare(a, b) {
   for (const x of as) for (const y of bs) if (x.length === y.length) score = Math.max(score, dot(x, y));
   return { score, model, match: score >= THRESHOLDS[model] };
 }
+
+/**
+ * Compara dos registros biométricos. La cara decide; si los dos tienen foto
+ * de la nariz y las narices se parecen mucho, basta con que la cara se
+ * parezca algo menos (por ejemplo, si la encontraron de lado).
+ * Devuelve { score, model, match, nose } (nose es null si falta alguna).
+ */
+export function compare(a, b) {
+  a = upgrade(a);
+  b = upgrade(b);
+  const face = compareFace(a, b);
+  const nose = a?.nose && b?.nose ? compareFace(a.nose, b.nose) : null;
+  const noseHelps = nose?.model === 'mobilenet' && face.model === 'mobilenet' &&
+    nose.score >= NOSE.threshold && face.score >= THRESHOLDS.mobilenet - NOSE.faceMargin;
+  return { ...face, match: face.match || noseHelps, nose: nose && nose.score };
+}
+
+// Mismos valores que is_pet_match() en supabase/schema.sql.
+const NOSE = { threshold: 0.85, faceMargin: 0.1 };
 
 /**
  * Qué tan parecida es cada captura al resto (0 a 1). Una captura con valor
@@ -147,10 +174,11 @@ export function consistency(embeddings) {
 const CONSISTENCY_MIN = { mobilenet: 0.6, basic: 0.6 };
 
 /**
- * Revisa luz y nitidez de una captura.
+ * Revisa luz y nitidez de una captura. Una nariz negra de cerca es oscura por
+ * naturaleza, así que con `nose` se acepta menos luz.
  * Devuelve { ok, brightness (0-255), sharpness, problem }.
  */
-export function quality(canvas) {
+export function quality(canvas, { nose = false } = {}) {
   const n = 128;
   const small = document.createElement('canvas');
   small.width = small.height = n;
@@ -175,7 +203,7 @@ export function quality(canvas) {
   }
   const sharpness = lsq / count - (lsum / count) ** 2;
   let problem = null;
-  if (brightness < 45) problem = 'Está muy oscuro, busca más luz.';
+  if (brightness < (nose ? 20 : 45)) problem = 'Está muy oscuro, busca más luz.';
   else if (brightness > 225) problem = 'Hay demasiada luz, evita el sol directo o el flash.';
   else if (sharpness < 25) problem = 'Salió borrosa, mantén el celular quieto.';
   return { ok: !problem, brightness, sharpness, problem };
