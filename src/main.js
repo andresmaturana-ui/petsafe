@@ -15,7 +15,7 @@ import register from './views/register.js';
 import lost from './views/lost.js';
 import lostAlert from './views/lost-alert.js';
 import found from './views/found.js';
-import tag from './views/tag.js';
+import tag, { seen } from './views/tag.js';
 import match from './views/match.js';
 import recovered from './views/recovered.js';
 import saveAccount from './views/save-account.js';
@@ -64,7 +64,7 @@ window.addEventListener('unhandledrejection', (e) => reloadIfStale(e.reason));
 // seo.config.js): direcciones sin "#", porque Instagram y otras apps cortan lo
 // que va después del "#" y todo terminaba en la presentación. Se cambia a la
 // dirección de siempre (…/#/clinica) para que el resto de la app funcione igual.
-const page = location.pathname.match(/\/(clinica|municipio|veterinarios|kiltrazo)\/?$/);
+const page = location.pathname.match(/\/(clinica|municipio|veterinarios|kiltrazo|vi)\/?$/);
 if (page) {
   history.replaceState(history.state, '', `${document.baseURI.split(/[?#]/)[0]}${location.search}${location.hash || `#/${page[1]}`}`);
 }
@@ -84,6 +84,7 @@ const routes = [
   ['perdi', lost],
   ['encontre', found],
   ['placa', tag],
+  ['vi', seen],
   ['perdida/:id', lostAlert],
   ['encontrada/:id', match],
   ['recuperada', recovered],
@@ -179,10 +180,10 @@ async function render() {
   // Quien llega por primera vez, sin perfil, ve la presentación de Kiltrazo.
   if (!isComplete(user) && view === home) view = landing;
   // Estas páginas se ven sin la app: sin menú y sin pedir el perfil.
-  document.body.classList.toggle('web-mode', [clinicPage, finder, landing, tag, drivePage].includes(view));
+  document.body.classList.toggle('web-mode', [clinicPage, finder, landing, tag, seen, drivePage].includes(view));
   document.body.classList.toggle('finder-mode', view === finder || view === landing);
   // Primer uso, o perfil creado antes de pedir todos los datos: completar perfil.
-  if (!isComplete(user) && ![profile, admin, password, privacy, terms, clinicPage, finder, landing, moved, tag, drivePage, kiltrazoPoint].includes(view)) view = profile;
+  if (!isComplete(user) && ![profile, admin, password, privacy, terms, clinicPage, finder, landing, moved, tag, seen, drivePage, kiltrazoPoint].includes(view)) view = profile;
 
   const tab = hash.replace(/^#\/?/, '').split('/')[0];
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));

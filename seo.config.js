@@ -2,7 +2,7 @@
 // - Pone la dirección pública (VITE_SITE_URL) en las etiquetas de index.html.
 // - Agrega las etiquetas de verificación de Google y Meta si están configuradas.
 // - Escribe robots.txt y sitemap.xml (con la página de cada clínica aprobada).
-// - Crea …/veterinarios/, …/clinica/, …/municipio/ y …/kiltrazo/, direcciones
+// - Crea …/veterinarios/, …/clinica/, …/municipio/, …/kiltrazo/ y …/vi/, direcciones
 //   "de verdad" sin "#": Google no indexa lo que va después de "#" e
 //   Instagram lo corta.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -50,6 +50,8 @@ const PAGES = [
     description: 'Operativos de vacunación y esterilización con reserva en línea, registro de animales de la comuna y mascotas perdidas y encontradas.',
   },
   { path: 'kiltrazo' },
+  // Enlace de las publicaciones de mascotas perdidas en Facebook.
+  { path: 'vi' },
 ];
 
 export function seo(env) {

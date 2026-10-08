@@ -70,6 +70,8 @@ alter table public.pets add column if not exists lost_lat double precision;
 alter table public.pets add column if not exists lost_lng double precision;
 alter table public.pets add column if not exists lost_alerted_at timestamptz;
 alter table public.pets add column if not exists lost_alerted int not null default 0;
+-- Publicación en la página de Facebook de Kiltrazo mientras está perdida.
+alter table public.pets add column if not exists fb_share boolean not null default false;
 
 -- Huellas biométricas: una fila por captura (y el promedio). Nadie las lee
 -- directamente; solo las funciones de búsqueda.
@@ -368,7 +370,7 @@ begin
 
   insert into found_reports (finder_id, finder_name, finder_phone, photo, lat, lng, species, source)
   values (auth.uid(), coalesce(p_name, ''), p_phone, p_photo, p_lat, p_lng, coalesce(p_species, ''),
-          case when p_source = 'placa' then 'placa' else '' end) returning id into r_id;
+          case when p_source in ('placa', 'facebook') then p_source else '' end) returning id into r_id;
   insert into found_samples (found_id, kind, dino, mobilenet, basic)
   select r_id, s.kind, s.dino, s.mobilenet, s.basic from bio_samples(p_bio) s;
 
@@ -498,7 +500,11 @@ end $$;
 -- personas con avisos cerca activados a 5 km o menos (notified = cuántas).
 drop function if exists public.report_lost(uuid);
 drop function if exists public.report_lost(uuid, double precision, double precision);
-create function public.report_lost(p_pet uuid, p_lat double precision default null, p_lng double precision default null)
+drop function if exists public.report_lost(uuid, double precision, double precision, boolean);
+-- p_fb: el dueño elige si se publica en la página de Facebook de Kiltrazo
+-- (nulo = se mantiene lo que eligió antes).
+create function public.report_lost(p_pet uuid, p_lat double precision default null, p_lng double precision default null,
+  p_fb boolean default null)
 returns jsonb
 language plpgsql security definer set search_path = public, extensions as $$
 declare f_id uuid; f_score real; pet pets; what text; sugg jsonb; n int;
@@ -512,7 +518,8 @@ begin
     lost_lat = coalesce(p_lat, case when status = 'lost' then lost_lat end),
     lost_lng = coalesce(p_lng, case when status = 'lost' then lost_lng end),
     lost_alerted_at = case when status = 'lost' then lost_alerted_at end,
-    lost_alerted = case when status = 'lost' then lost_alerted else 0 end
+    lost_alerted = case when status = 'lost' then lost_alerted else 0 end,
+    fb_share = coalesce(p_fb, case when status = 'lost' then fb_share else false end)
   where id = p_pet and owner_id = auth.uid() returning * into pet;
   if pet.id is null then raise exception 'Mascota no encontrada'; end if;
 
@@ -605,7 +612,7 @@ begin
   select * into pet from pets where id = p_pet and (owner_id = auth.uid() or is_admin());
   if pet.id is null then raise exception 'Mascota no encontrada'; end if;
   update pets set status = 'home', recovered_at = now(), lost_lat = null, lost_lng = null,
-    lost_alerted_at = null, lost_alerted = 0 where id = p_pet;
+    lost_alerted_at = null, lost_alerted = 0, fb_share = false where id = p_pet;
   update found_reports set status = 'closed' where pet_id = p_pet and status = 'open';
   insert into successes (pet_id, pet_name, photo, story)
   values (pet.id, pet.name, pet.photo, coalesce(p_story, '')) returning id into s_id;
@@ -688,6 +695,52 @@ do $$ begin
     drop trigger if exists notifications_push on public.notifications;
     create trigger notifications_push after insert on public.notifications
       for each row execute function public.push_notification();
+  end if;
+end $$;
+
+-- ---------- Página de Facebook (e Instagram) de Kiltrazo ----------
+-- Si el dueño lo elige al avisar que se perdió, la mascota se publica en la
+-- página de Facebook de Kiltrazo (y en su Instagram, si está conectado) y la
+-- publicación se borra cuando vuelve a casa (o si se elimina la mascota). Lo hace la función facebook-page
+-- (supabase/functions/facebook-page): se la llama con { pet } y ella mira el
+-- estado de la mascota para publicar o borrar. Aquí queda qué publicación es
+-- de qué mascota; no se borra junto con la mascota para poder quitarla.
+create table if not exists public.facebook_posts (
+  pet_id uuid primary key,
+  post_id text,
+  created_at timestamptz not null default now()
+);
+-- Lo mismo en Instagram (publicación e historia), si la página lo tiene conectado.
+alter table public.facebook_posts add column if not exists ig_post_id text;
+alter table public.facebook_posts add column if not exists ig_story_id text;
+alter table public.facebook_posts enable row level security;
+
+create or replace function public.facebook_sync() returns trigger
+language plpgsql security definer set search_path = public, extensions as $$
+declare pet_id uuid := coalesce(new.id, old.id);
+begin
+  if tg_op = 'UPDATE' and new.status is not distinct from old.status
+     and new.fb_share is not distinct from old.fb_share then
+    return new;
+  end if;
+  if tg_op = 'DELETE' and not exists (select 1 from facebook_posts f where f.pet_id = old.id) then
+    return old;
+  end if;
+  perform net.http_post(
+    url := 'https://zzudsvwqskypviqruevb.supabase.co/functions/v1/facebook-page',
+    body := jsonb_build_object('pet', pet_id),
+    headers := '{"Content-Type": "application/json"}'::jsonb);
+  return coalesce(new, old);
+exception when others then
+  return coalesce(new, old);
+end $$;
+
+do $$ begin
+  if exists (select 1 from pg_available_extensions where name = 'pg_net') then
+    create extension if not exists pg_net;
+    drop trigger if exists pets_facebook on public.pets;
+    create trigger pets_facebook after update of status, fb_share or delete on public.pets
+      for each row execute function public.facebook_sync();
   end if;
 end $$;
 

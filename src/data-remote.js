@@ -287,9 +287,20 @@ export async function adminDeleteUser(userId) {
   return run(sb().rpc('admin_delete_user', { p_user: userId }));
 }
 
-export async function reportLost(pet, point = null) {
-  const r = await run(sb().rpc('report_lost', { p_pet: pet.id, p_lat: point?.lat ?? null, p_lng: point?.lng ?? null }));
+// fb: publicar en la página de Facebook de Kiltrazo (solo se envía si se
+// preguntó, así funciona aunque aún no se haya vuelto a correr schema.sql).
+export async function reportLost(pet, point = null, fb = null) {
+  const args = { p_pet: pet.id, p_lat: point?.lat ?? null, p_lng: point?.lng ?? null };
+  if (fb != null) args.p_fb = fb;
+  const r = await run(sb().rpc('report_lost', args));
   return { match: r.id ? { id: r.id } : null, suggestions: rows(r.suggestions), notified: r.notified };
+}
+
+/** Páginas de Facebook e Instagram de Kiltrazo, si están conectadas. */
+export async function facebookPage() {
+  const rows = await run(sb().from('app_settings').select('key, value').in('key', ['facebook_page', 'instagram_account']));
+  const get = (k) => rows?.find((r) => r.key === k)?.value || '';
+  return get('facebook_page') ? { facebook: get('facebook_page'), instagram: get('instagram_account') } : null;
 }
 
 /** Lo que ve quien recibió el aviso de mascota perdida (sin datos del dueño). */

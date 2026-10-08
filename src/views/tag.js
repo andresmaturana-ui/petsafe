@@ -6,3 +6,9 @@ import found from './found.js';
 export default function tag(el, params, ctx) {
   return found(el, { ...params, placa: true }, ctx);
 }
+
+// …/#/vi (y kiltrazo.cl/vi/): quien vio una mascota perdida publicada en la
+// página de Facebook de Kiltrazo.
+export function seen(el, params, ctx) {
+  return found(el, { ...params, facebook: true }, ctx);
+}
