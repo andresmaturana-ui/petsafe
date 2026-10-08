@@ -38,6 +38,7 @@ export const createPetGift = call('createPetGift');
 export const petGiftInfo = call('petGiftInfo');
 export const acceptPetGift = call('acceptPetGift');
 export const reportLost = call('reportLost');
+export const facebookPage = call('facebookPage');
 export const markRecovered = call('markRecovered');
 export const lostAlert = call('lostAlert');
 export const myArea = call('myArea');

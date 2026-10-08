@@ -1,4 +1,4 @@
-import { myPets, reportLost, claimFound } from '../data.js';
+import { myPets, reportLost, claimFound, facebookPage } from '../data.js';
 import { esc, go, changed, timeAgo, toast, getLocation } from '../ui.js';
 import { describe } from '../breeds.js';
 import { pickPoint } from '../map.js';
@@ -7,7 +7,7 @@ import { NEARBY_KM } from '../geo.js';
 // "Perdí mi mascota": el dueño marca dónde se perdió, avisamos a las personas
 // a 5 km y buscamos en los avisos de "encontré".
 export default async function lost(el, _params, { user }) {
-  const pets = await myPets(user);
+  const [pets, fbPage] = await Promise.all([myPets(user), facebookPage().catch(() => '')]);
 
   if (!pets.length) {
     el.innerHTML = `
@@ -53,31 +53,37 @@ export default async function lost(el, _params, { user }) {
           <p class="muted">Usamos tu ubicación; toca el mapa para marcar dónde la viste por última vez.</p>
           <div class="map" id="lostmap"></div>
           <p class="note">📣 Avisaremos a las personas de Kiltrazo que estén a ${NEARBY_KM} km o menos de este punto. Verán su foto, su nombre y la zona aproximada, nunca tus datos.</p>
+          ${fbPage ? `
+          <label class="consent fb-share"><input type="checkbox" data-fb checked>
+            <span>Publicar también en la <a href="${esc(fbPage)}" target="_blank" rel="noopener">página de Facebook de Kiltrazo</a> (su foto, su nombre y el sector). La borramos sola cuando vuelva a casa.</span></label>` : ''}
           <button class="btn primary big" data-send>Avisar a los vecinos</button>
           <button class="btn ghost" data-skip>Seguir sin avisar cerca</button>
         </div>`;
       where.scrollIntoView({ behavior: 'smooth' });
       const picker = pickPoint(where.querySelector('#lostmap'), null, (p) => (point = p));
       getLocation().then((loc) => loc && !point && picker.set(loc));
+      const fb = () => (fbPage ? where.querySelector('[data-fb]').checked : null);
       where.querySelector('[data-send]').addEventListener('click', () => {
         if (!point) return alert('Marca en el mapa dónde se perdió');
+        const share = fb();
         where.innerHTML = '';
-        activate(pet, point);
+        activate(pet, point, share);
       });
       where.querySelector('[data-skip]').addEventListener('click', () => {
+        const share = fb();
         where.innerHTML = '';
-        activate(pet, null);
+        activate(pet, null, share);
       });
     }),
   );
 
-  async function activate(pet, point) {
+  async function activate(pet, point, fb = null) {
     const result = el.querySelector('#result');
     result.innerHTML = `<div class="card center"><div class="spinner"></div><p>${point ? 'Avisando a los vecinos y buscando' : 'Buscando'} a ${esc(pet.name)}…</p></div>`;
     result.scrollIntoView({ behavior: 'smooth' });
     let res;
     try {
-      res = await reportLost(pet, point);
+      res = await reportLost(pet, point, fb);
     } catch (err) {
       result.innerHTML = `<div class="card center"><h2>No se pudo activar el aviso</h2><p>${esc(err.message)}</p><p class="muted">Revisa tu conexión e inténtalo de nuevo.</p></div>`;
       return;
@@ -89,6 +95,7 @@ export default async function lost(el, _params, { user }) {
         <div class="empty-emoji">📣</div>
         <h2>Aviso activo para ${esc(pet.name)}</h2>
         ${neighbors(res.notified)}
+        ${fb ? `<p class="note">📘 Lo publicaremos en la <a href="${esc(fbPage)}" target="_blank" rel="noopener">página de Facebook de Kiltrazo</a>. Cuando vuelva a casa, la publicación se borra sola.</p>` : ''}
         <p>${res.suggestions.length ? 'No hay una coincidencia segura, pero alguien encontró mascotas parecidas. ¿Es alguna de estas?' : 'Todavía nadie la ha escaneado. Te enviaremos una notificación apenas alguien la encuentre.'}</p>
       </div>
       ${res.suggestions.length ? `

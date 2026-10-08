@@ -147,6 +147,11 @@ export async function removeMyPet(user, petId) {
  * Si el dueño marca dónde se perdió (point), la primera vez avisa a quienes
  * activaron los avisos cerca a 5 km o menos.
  */
+// Sin nube no hay página de Facebook.
+export async function facebookPage() {
+  return '';
+}
+
 export async function reportLost(pet, point = null) {
   if (pet.status !== 'lost') {
     Object.assign(pet, { lostAt: now(), lostLat: null, lostLng: null, lostAlertedAt: null, lostAlerted: 0 });

@@ -10,9 +10,12 @@ import { describe } from '../breeds.js';
 // otros usos malintencionados: solo el dueño puede iniciar el contacto.
 //
 // Con { placa: true } es la página del QR de la placa del collar (#/placa):
-// funciona sin cuenta ni perfil y solo pide un teléfono de contacto.
-export default async function found(el, { placa = false } = {}, { user }) {
-  if (placa) countVisit();
+// funciona sin cuenta ni perfil y solo pide un teléfono de contacto. Con
+// { facebook: true } es lo mismo, para quien llega desde una publicación de
+// mascota perdida en la página de Facebook de Kiltrazo (#/vi).
+export default async function found(el, { placa = false, facebook = false } = {}, { user }) {
+  if (facebook) placa = true;
+  else if (placa) countVisit();
   el.innerHTML = `
     ${placa ? `
     <header class="fd-top tag-top"><a href="#/kiltrazo" class="fd-brand"><img src="brand/kiltrazo.svg" alt="Kiltrazo"></a></header>
@@ -22,9 +25,9 @@ export default async function found(el, { placa = false } = {}, { user }) {
       <p>Filma la carita de la mascota moviendo el celular despacio; la app toma sola las capturas. Si está registrada en Kiltrazo, le avisamos a su dueño al instante. <strong>No necesitas crear cuenta.</strong></p>
       <div id="scanner"></div>
     </div>
-    <a class="card tag-only" href="#/kiltrazo">
+    ${facebook ? '' : `<a class="card tag-only" href="#/kiltrazo">
       <span>🏷️</span><span><strong>¿Solo encontraste la placa?</strong><small>Conoce Kiltrazo: registra gratis a tu mascota con su cara.</small></span>
-    </a>` : `
+    </a>`}` : `
     <div class="card">
       <h1>Encontré una mascota</h1>
       <p>Escanéala igual que al registrar una mascota: filma su cara moviendo el celular despacio (la app toma sola 5 capturas) y, si se deja, acerca el celular a su nariz. Más capturas = más fácil reconocerla. Si está registrada, le avisamos a su dueño de inmediato.</p>
@@ -88,7 +91,7 @@ export default async function found(el, { placa = false } = {}, { user }) {
       species: f.get('species'),
       finderName: (f.get('finderName') || '').trim(),
       finderPhone: f.get('finderPhone').trim(),
-      source: placa ? 'placa' : '',
+      source: facebook ? 'facebook' : placa ? 'placa' : '',
       });
     } catch (err) {
       btn.disabled = false;

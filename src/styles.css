@@ -855,3 +855,4 @@ a.card.tag-only { display: flex; gap: 12px; align-items: center; text-decoration
 .point-list li > span { display: grid; min-width: 0; }
 .point-list li small { color: var(--muted); overflow-wrap: anywhere; }
 .point-list .btn { width: auto; flex: none; }
+.fb-share { margin: 12px 0 14px; }
