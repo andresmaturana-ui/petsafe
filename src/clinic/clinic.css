@@ -26,8 +26,6 @@ body.clinic-mode #view { padding: 0; display: block; }
 }
 .ck-nav:hover { background: var(--cream); }
 .ck-nav.on { background: var(--peach); color: var(--coral-dark); }
-.ck-nav.later { color: var(--muted); font-weight: 600; cursor: default; }
-.ck-nav.later:hover { background: none; }
 .ck-count { white-space: nowrap; font-size: 0.72rem; font-weight: 800; border-radius: 999px; padding: 1px 8px; background: var(--cream); color: var(--muted); }
 .ck-count.hot { background: var(--coral); color: #fff; }
 .ck-me { margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--line); display: grid; gap: 2px; font-size: 0.85rem; }
@@ -179,7 +177,7 @@ body.clinic-mode #view { padding: 0; display: block; }
 
 /* Celular y tablet angosta */
 @media (max-width: 900px) {
-  .ck { grid-template-columns: minmax(0, 1fr); background: none; }
+  .ck { grid-template-columns: minmax(0, 1fr); align-content: start; background: none; }
   .ck-tag { white-space: normal; }
   .ck-side { position: sticky; top: 0; z-index: 10; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 12px 8px; gap: 4px 8px; border-right: 0; border-bottom: 1px solid var(--line); }
   .ck-brand { font-size: 1rem; padding: 0; }
@@ -188,7 +186,7 @@ body.clinic-mode #view { padding: 0; display: block; }
   .ck-clinic-pick { margin: 0; flex: 1; }
   .ck-navs { flex-direction: row; overflow-x: auto; width: 100%; gap: 4px; padding-bottom: 2px; }
   .ck-nav { white-space: nowrap; padding: 6px 12px; font-size: 0.9rem; }
-  .ck-nav.later, .ck-me { display: none; }
+  .ck-me { display: none; }
   .ck-main { padding: 14px 14px 32px; }
   .ck-pgrid, .ck-cols-2, .ck-start-cols { grid-template-columns: minmax(0, 1fr); }
   .ck-pside { order: 2; }
