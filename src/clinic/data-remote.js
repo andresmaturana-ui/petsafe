@@ -60,6 +60,14 @@ export async function myClinics(userId) {
   return data.filter((m) => m.clinic).map((m) => ({ ...camel(m.clinic), role: m.role, isAdmin: m.is_admin, memberName: m.name }));
 }
 
+// El administrador de Kiltrazo entra a cualquier clínica como si la administrara
+// (la base lo deja con is_admin(), ver is_clinic_member en schema.sql).
+export async function visitClinic(clinicId) {
+  if (!(await run(sb().rpc('is_admin')))) return null;
+  const c = await run(sb().from('clinics').select('*').eq('id', clinicId).maybeSingle());
+  return c && { ...camel(c), role: 'vet', isAdmin: true, memberName: '', visiting: true };
+}
+
 export async function members(clinicId) {
   return (await run(sb().from('clinic_members').select('*').eq('clinic_id', clinicId).order('created_at'))).map(camel);
 }

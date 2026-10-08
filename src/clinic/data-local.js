@@ -96,6 +96,13 @@ export async function myClinics(userId) {
     .filter((c) => c.id);
 }
 
+// Sin servidor, el administrador es quien entró al panel en esta pestaña.
+export async function visitClinic(clinicId) {
+  if (sessionStorage.getItem('petsafe-admin') !== 'ok') return null;
+  const c = (await all('clinics')).find((x) => x.id === clinicId);
+  return c && { ...c, role: 'vet', isAdmin: true, memberName: '', visiting: true };
+}
+
 export const members = (clinicId) => list('clinic_members', { clinicId }, { order: 'createdAt' });
 
 export async function removeMember(clinicId, userId) {
