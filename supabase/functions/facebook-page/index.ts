@@ -18,13 +18,27 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 const PAGE = Deno.env.get('FACEBOOK_PAGE_ID') || '';
+// Sirve el token de la página o uno de usuario del sistema / de usuario con
+// acceso a ella: en ese caso se pide el de la página (ver pageToken).
 const TOKEN = Deno.env.get('FACEBOOK_PAGE_TOKEN') || '';
+let pageTok = '';
 const GRAPH = `https://graph.facebook.com/${Deno.env.get('FACEBOOK_GRAPH_VERSION') || 'v23.0'}`;
 const SITE = 'https://kiltrazo.cl';
 
+async function pageToken() {
+  if (pageTok) return pageTok;
+  try {
+    const res = await fetch(`${GRAPH}/${PAGE}?fields=access_token&access_token=${encodeURIComponent(TOKEN)}`);
+    pageTok = (await res.json())?.access_token || TOKEN;
+  } catch {
+    return TOKEN;
+  }
+  return pageTok;
+}
+
 async function graph(path: string, init: RequestInit = {}) {
   const sep = path.includes('?') ? '&' : '?';
-  const res = await fetch(`${GRAPH}/${path}${sep}access_token=${encodeURIComponent(TOKEN)}`, init);
+  const res = await fetch(`${GRAPH}/${path}${sep}access_token=${encodeURIComponent(await pageToken())}`, init);
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) throw new Error(data.error?.message || `Facebook respondió ${res.status}`);
   return data;
