@@ -2822,3 +2822,10 @@ begin
     from auth.users u where coalesce(u.email, '') <> '');
 end $$;
 grant execute on function public.admin_accounts() to authenticated;
+
+-- Punto de reconocimiento facial (2026-10-08): cuenta del equipo que solo
+-- registra mascotas (filma la cara) y se las entrega a su dueño con un QR.
+alter table public.clinic_members drop constraint if exists clinic_members_role_check;
+alter table public.clinic_members add constraint clinic_members_role_check check (role in ('vet', 'recepcion', 'punto'));
+alter table public.clinic_invites drop constraint if exists clinic_invites_role_check;
+alter table public.clinic_invites add constraint clinic_invites_role_check check (role in ('vet', 'recepcion', 'punto'));

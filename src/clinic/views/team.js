@@ -43,7 +43,7 @@ export default function team(el, _params, ctx) {
           <div class="card form">
             <h2>Invitar a alguien</h2>
             <p class="muted small">Genera un código y envíaselo. La persona entra a <span class="ck-mono">${esc(link)}</span>, crea su cuenta y toca "Me invitaron". Cada código sirve una vez y dura 7 días.</p>
-            <label>Rol<select id="ck-inv-role"><option value="vet">Veterinario/a</option><option value="recepcion">${roleName('recepcion', clinic)}</option></select></label>
+            <label>Rol<select id="ck-inv-role"><option value="vet">Veterinario/a</option><option value="recepcion">${roleName('recepcion', clinic)}</option><option value="punto">${roleName('punto', clinic)}</option></select></label>
             <button class="btn secondary" id="ck-inv">Generar código</button>
             <p class="ck-code" id="ck-inv-code" hidden></p>
           </div>
@@ -72,6 +72,7 @@ export default function team(el, _params, ctx) {
           <h2>Qué puede hacer cada rol</h2>
           <p class="small"><strong>Veterinario/a:</strong> todo, incluidas las consultas.</p>
           <p class="small"><strong>${roleName('recepcion', clinic)}:</strong> ${muni ? 'agenda, operativos, sala de espera, fichas, vacunas y el tablero de perdidos y encontrados.' : 'agenda, sala de espera, pacientes, vacunas y exámenes.'} Ve el historial, pero no escribe consultas.</p>
+          <p class="small"><strong>${roleName('punto', clinic)}:</strong> solo filma la cara de mascotas nuevas y se las entrega a su ${muni ? 'responsable' : 'dueño'} con un QR. No ve ${muni ? 'las fichas' : 'los pacientes'} ni la agenda. Sirve para ferias, operativos o un tablet en el mesón.</p>
         </div>
       </div>
     </div>
