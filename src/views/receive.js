@@ -33,7 +33,9 @@ export default async function receive(el, { code }, { user }) {
       ${info.photo ? `<img class="receive-photo" src="${esc(info.photo)}" alt="">` : '<span class="receive-photo">🐾</span>'}
       <h1>${esc(info.clinic)} te envía a ${esc(info.name)}</h1>
       <p class="muted">${esc([SPECIES[info.species], info.breed].filter(Boolean).join(' · '))}</p>
-      <p>${info.kind === 'municipio'
+      <p>${info.kind === 'kiltrazo'
+        ? 'Al agregarla a tu Kiltrazo queda con su cara ya filmada: si algún día se pierde, cualquier vecino la reconoce con el reconocimiento facial para volver a casa.'
+        : info.kind === 'municipio'
         ? 'Al agregarla a tu Kiltrazo verás sus vacunas y te avisaremos antes de cada dosis. Si algún día se pierde, cualquier vecino la reconoce por su cara.'
         : `Al agregarla a tu Kiltrazo verás sus vacunas, te avisaremos antes de cada dosis y podrás pedir hora con ${esc(info.clinic)}.`}</p>
       ${askPromos ? `<div class="receive-promos">${promosBox()}<p class="small muted">Esta casilla es de Kiltrazo, no de ${esc(info.clinic)}.</p></div>` : ''}

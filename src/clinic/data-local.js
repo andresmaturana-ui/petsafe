@@ -430,10 +430,10 @@ export async function acceptTransfer(code) {
   if (!cp || cp.petId) throw new Error('El enlace ya se usó o venció. Pide uno nuevo a tu veterinaria.');
   if (!cp.scan) throw new Error('La clínica no filmó su cara. Regístrala tú desde la app.');
   const me = await app.currentUser();
-  const clinic = (await get('clinics', t.clinicId))?.name;
+  const clinic = await get('clinics', t.clinicId);
   const pet = await app.registerPet(me, {
     name: cp.name, species: cp.species || '', breed: cp.breed || '', ownerName: me.name || '',
-    diseases: cp.allergies || '', vaccines: `Las registra ${clinic}`, photo: cp.photo, biometric: cp.scan, crops: null,
+    diseases: cp.allergies || '', vaccines: clinic?.kind === 'kiltrazo' ? '' : `Las registra ${clinic?.name}`, photo: cp.photo, biometric: cp.scan, crops: null,
   });
   await claimTransfer(code, pet.id);
   return pet.id;
@@ -449,7 +449,37 @@ export async function claimTransfer(code, petId) {
     petId, tutorUser: me.id, tutorName: cp.tutorName || `${me.firstName || me.name} ${me.lastName || ''}`.trim(),
     tutorPhone: cp.tutorPhone || me.phone || '', tutorEmail: cp.tutorEmail || me.email || '', tutorAddress: cp.tutorAddress || me.address || '',
   });
-  return (await get('clinics', t.clinicId))?.name;
+  const c = await get('clinics', t.clinicId);
+  // Del Punto Kiltrazo: entregada, sale de la lista (Kiltrazo no es su veterinaria).
+  if (c?.kind === 'kiltrazo') await update('clinic_patients', cp.id, { removedAt: now() });
+  return c?.name;
+}
+
+// ---------- Punto Kiltrazo (sin clínica) ----------
+
+export async function kiltrazoPoint() {
+  const me = await app.currentUser();
+  let c = (await all('clinics')).find((x) => x.kind === 'kiltrazo');
+  if (!c) c = await put('clinics', { id: uuid(), name: 'Punto Kiltrazo', address: '', phone: '', kind: 'kiltrazo', approved: true, slug: await makeSlug('Punto Kiltrazo'), createdBy: me.id, createdAt: now() });
+  await addMember(c.id, me.id, `${me.firstName || me.name || ''} ${me.lastName || ''}`.trim(), 'vet', true);
+  return c.id;
+}
+
+export async function pointRegister(clinicId, p) {
+  const cp = await insert('clinic_patients', { clinicId, ...p });
+  return { id: cp.id, code: await createTransferCode(cp.id) };
+}
+
+export async function setPointUser(userId, on) {
+  const c = await kiltrazoPoint();
+  if (userId === (await app.currentUser()).id) return true;
+  if (!on) {
+    await del('clinic_members', `${c}:${userId}`);
+    return true;
+  }
+  const u = (await app.listUsers()).find((x) => x.id === userId);
+  await addMember(c, userId, u ? `${u.firstName || u.name || ''} ${u.lastName || ''}`.trim() : '', 'punto', false);
+  return true;
 }
 
 // ---------- Mapa de clínicas (urgencias) ----------

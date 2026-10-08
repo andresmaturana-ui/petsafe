@@ -122,6 +122,8 @@ export default async function profile(el, _params, { user, refresh }) {
         <a class="btn secondary" href="#/registrar">Registrar mascota</a>
       </div>
 
+      <div id="point-card" hidden></div>
+
       ${others.length ? `
         <div class="card">
           <h2>Cambiar de usuario</h2>
@@ -166,6 +168,19 @@ export default async function profile(el, _params, { user, refresh }) {
         ${CLOUD ? '' : '<button class="btn ghost" id="newuser">Agregar otro usuario</button>'}
         <a class="btn ghost" href="#/admin">Administrador</a>
       </div>` : ''}`;
+
+  // Punto Kiltrazo: a quien el administrador le dio permiso, un acceso directo.
+  const pointBox = el.querySelector('#point-card');
+  if (pointBox) {
+    import('../clinic/data.js').then(({ myClinics }) => myClinics(user.id)).then((cs) => {
+      if (!cs.some((c) => c.kind === 'kiltrazo' && c.role === 'punto')) return;
+      pointBox.outerHTML = `<div class="card">
+        <h2>📷 Punto de reconocimiento facial</h2>
+        <p>Kiltrazo te dio permiso para registrar mascotas y entregárselas a sus dueños con un QR.</p>
+        <a class="btn primary" href="#/punto">Abrir punto</a>
+      </div>`;
+    }).catch((err) => console.warn('Punto', err));
+  }
 
   const nearbyBox = el.querySelector('#nearby');
   if (nearbyBox) profileNearby(nearbyBox, user, refresh).catch((err) => console.warn('Avisos cerca', err));

@@ -25,7 +25,7 @@ export default async function admin(el, _params, ctx) {
     <div class="admin-head">
       <h1>Administrador</h1>
       <div class="tabs">
-        ${[['alertas', '🚨 Alertas'], ['recon', '🎯 Reconocimiento'], ['mensajes', '📢 Mensajes'], ['usuarios', '👥 Usuarios'], ['clinicas', '🏥 Clínicas'], ['municipios', '🏛️ Municipalidades'], ['publicidad', '📣 Publicidad'], ['casos', '💛 Reencuentros'], ['datos', '📋 Datos']]
+        ${[['alertas', '🚨 Alertas'], ['recon', '🎯 Reconocimiento'], ['mensajes', '📢 Mensajes'], ['usuarios', '👥 Usuarios'], ['clinicas', '🏥 Clínicas'], ['municipios', '🏛️ Municipalidades'], ['punto', '📷 Punto'], ['publicidad', '📣 Publicidad'], ['casos', '💛 Reencuentros'], ['datos', '📋 Datos']]
           .map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
       </div>
     </div>
@@ -40,7 +40,7 @@ export default async function admin(el, _params, ctx) {
   );
 
   const panel = el.querySelector('#panel');
-  await ({ alertas, recon, mensajes, usuarios, clinicas, municipios, publicidad, casos, datos })[tab](panel, ctx);
+  await ({ alertas, recon, mensajes, usuarios, clinicas, municipios, punto, publicidad, casos, datos })[tab](panel, ctx);
 }
 
 // Con Supabase el permiso vive en el servidor: se entra con un correo de
@@ -412,13 +412,13 @@ async function loadPeople() {
         p = { id: m.userId, name: m.name, firstName: '', lastName: '', phone: '', email: a?.email || '', address: '', createdAt: a?.createdAt || m.createdAt, hasProfile: false, teams: [] };
         people.push(p);
       }
-      p.teams.push({ muni: c.kind === 'municipio', place: c.name, placePhone: c.phone || '', role: roleName(m.role, c), isAdmin: !!m.isAdmin });
+      p.teams.push({ muni: c.kind === 'municipio', point: c.kind === 'kiltrazo', place: c.name, placePhone: c.phone || '', role: roleName(m.role, c), isAdmin: !!m.isAdmin });
     }
   }
   for (const p of people) {
     const own = pets.filter((x) => x.ownerId === p.id).length;
     p.app = p.hasProfile && (own > 0 || !p.teams.length);
-    p.clinic = p.teams.some((t) => !t.muni);
+    p.clinic = p.teams.some((t) => !t.muni && !t.point);
     p.muni = p.teams.some((t) => t.muni);
     p.phone = p.phone || '';
   }
@@ -426,7 +426,7 @@ async function loadPeople() {
 }
 
 const fullName = (u) => (u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.name) || 'Sin nombre';
-const teamText = (t) => `${t.muni ? '🏛️' : '🏥'} ${t.place} · ${t.role}${t.isAdmin ? ' (administra)' : ''}`;
+const teamText = (t) => `${t.point ? '📷' : t.muni ? '🏛️' : '🏥'} ${t.place} · ${t.role}${t.isAdmin ? ' (administra)' : ''}`;
 // Cómo usa Kiltrazo: "App", "Clínica", "Municipal" (puede ser más de uno).
 const usesText = (p) => [p.app && 'App', p.clinic && 'Clínica', p.muni && 'Municipal'].filter(Boolean).join(', ');
 
@@ -583,6 +583,53 @@ async function usuarios(panel, { refresh }) {
   }));
 }
 
+// Punto Kiltrazo: el punto de reconocimiento facial propio de Kiltrazo, sin
+// clínica. El administrador lo abre aquí y da o quita el permiso a usuarios de
+// la app; ellos lo abren desde Perfil.
+async function punto(panel, { refresh }) {
+  const { allClinics, setPointUser } = await import('../clinic/data.js');
+  const [{ people }, clinics] = await Promise.all([loadPeople(), allClinics().catch(() => [])]);
+  const point = clinics.find((c) => c.kind === 'kiltrazo');
+  const allowed = (point?.members || []).filter((m) => m.role === 'punto')
+    .map((m) => people.find((u) => u.id === m.userId) || { id: m.userId, name: m.name || 'Sin nombre', phone: '', email: '' });
+  const contact = (u) => esc([u.phone, u.email].filter(Boolean).join(' · ') || 'Sin datos de contacto');
+  panel.innerHTML = `
+    <div class="card">
+      <h2>📷 Punto Kiltrazo</h2>
+      <p>Punto de reconocimiento facial propio de Kiltrazo, sin clínica. Filmas la cara de la mascota, pones su nombre y el de su dueño, y se la entregas con un QR. Sirve para ferias, eventos u operativos.</p>
+      <a class="btn primary big" href="#/punto">Abrir punto</a>
+    </div>
+    <div class="card">
+      <h2>Quién puede usar el punto (${allowed.length})</h2>
+      <p class="small muted">Lo abren en su app, en Perfil → "Punto de reconocimiento facial". Solo ven esa pantalla: no ven las mascotas registradas ni los datos de los dueños.</p>
+      <ul class="user-list point-list">${allowed.map((u) => `
+        <li><span><strong>${esc(fullName(u))}</strong><small>${contact(u)}</small></span>
+          <button type="button" class="link danger small" data-off="${esc(u.id)}">Quitar permiso</button></li>`).join('') || '<li><span class="muted">Nadie todavía.</span></li>'}
+      </ul>
+      <h3>Dar permiso</h3>
+      <input class="search" type="search" id="pq" placeholder="🔍 Buscar usuario: nombre, teléfono o correo" autocomplete="off">
+      <ul class="user-list point-list" id="pq-list"></ul>
+    </div>`;
+  const set = async (id, on, b) => {
+    b.disabled = true;
+    try {
+      await setPointUser(id, on);
+      toast(on ? 'Permiso dado 📷' : 'Permiso quitado', 'ok');
+      refresh();
+    } catch (err) {
+      toast(err.message, 'bad');
+      b.disabled = false;
+    }
+  };
+  panel.querySelectorAll('[data-off]').forEach((b) => b.addEventListener('click', () => set(b.dataset.off, false, b)));
+  const candidates = people.filter((u) => u.hasProfile && !allowed.some((a) => a.id === u.id));
+  userSearch(panel.querySelector('#pq'), panel.querySelector('#pq-list'), candidates, (u) => `
+    <li><span><strong>${esc(fullName(u))}</strong><small>${contact(u)}</small></span>
+    <button type="button" class="btn small primary" data-on="${esc(u.id)}">Dar permiso</button></li>`, (list) => {
+    list.querySelectorAll('[data-on]').forEach((b) => b.addEventListener('click', () => set(b.dataset.on, true, b)));
+  });
+}
+
 // Todas las clínicas de Kiltrazo y su equipo. El administrador de Kiltrazo
 // maneja cuentas (quién administra cada clínica), no ve fichas clínicas.
 // Banners del buscador de veterinarios (…/#/veterinarios).
@@ -679,7 +726,7 @@ async function clinicas(panel, { refresh }, muni = false) {
   const { TERMS_VERSION } = await import('../config.js');
   const { roleName } = await import('../clinic/ui.js');
   const [every, users] = await Promise.all([allClinics(), listUsers()]);
-  const all = every.filter((c) => (c.kind === 'municipio') === muni);
+  const all = every.filter((c) => (muni ? c.kind === 'municipio' : !['municipio', 'kiltrazo'].includes(c.kind)));
   const stats = muni ? await muniStats().catch(() => ({})) : {};
   const ROLES = { vet: roleName('vet', { kind: muni ? 'municipio' : 'clinica' }), recepcion: roleName('recepcion', { kind: muni ? 'municipio' : 'clinica' }) };
   const word = muni ? 'municipalidad' : 'clínica';

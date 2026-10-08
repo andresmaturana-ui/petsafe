@@ -13,10 +13,13 @@ export const {
   requestAppointment, alertEmergency, cancelMyAppointment, myAppointment, confirmMyAppointment, notifyAppointment, createTransferCode, transferInfo, claimTransfer, acceptTransfer,
   saveReview, nearbyClinics, listBanners, saveBanner, deleteBanner, bannerClick, saveSpecialties, saveSchedule, busyElsewhere, availableSlots, publicClinic, guestRequestAppointment,
   createMunicipality, saveMuni, publicDrive, bookDrive, muniBoard, muniStats, comunaDrives, driveNotice,
+  kiltrazoPoint, setPointUser, pointRegister,
 } = B;
 
 /** ¿Es una municipalidad (Kiltrazo Municipal) y no una clínica? */
 export const isMuni = (c) => c?.kind === 'municipio';
+/** ¿Es el Punto Kiltrazo (punto de reconocimiento facial sin clínica)? */
+export const isPoint = (c) => c?.kind === 'kiltrazo';
 
 // ---------- Clínica activa (por si alguien trabaja en dos) ----------
 
