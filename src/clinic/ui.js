@@ -8,7 +8,7 @@ export const STATUS = {
   solicitada: 'Pedida por el tutor', en_camino: 'En camino',
   agendada: 'Agendada', en_sala: 'En sala', en_atencion: 'En atención', atendida: 'Atendida', no_vino: 'No vino', cancelada: 'Cancelada',
 };
-export const ROLES = { vet: 'Veterinario/a', recepcion: 'Recepción' };
+export const ROLES = { vet: 'Veterinario/a', recepcion: 'Recepción', punto: 'Punto de reconocimiento facial' };
 /** En una municipalidad, "recepción" es el funcionario o funcionaria municipal. */
 export const roleName = (role, clinic) => (clinic?.kind === 'municipio' && role === 'recepcion' ? 'Funcionario/a' : ROLES[role] || '');
 

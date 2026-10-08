@@ -17,6 +17,7 @@ import requests, { homeVisits } from './views/requests.js';
 import review from './review.js';
 import drives, { driveForm, drive } from './views/drives.js';
 import board from './views/board.js';
+import point from './views/point.js';
 
 const ROUTES = [
   ['', agenda, 'agenda'],
@@ -39,6 +40,7 @@ const ROUTES = [
   ['operativo/:id', drive, 'operativos'],
   ['operativo/:id/editar', driveForm, 'operativos'],
   ['perdidos', board, 'perdidos'],
+  ['punto', point, 'punto'],
 ];
 
 function resolve(path) {
@@ -109,6 +111,21 @@ export default async function clinicApp(el, path, { refresh }) {
   const homeToday = todayList.filter((a) => a.place === 'domicilio' && ['agendada', 'en_camino', 'en_atencion'].includes(a.status)).length;
   const inRoom = todayList.filter((a) => a.status === 'en_sala').length;
 
+  // Punto de reconocimiento facial: pantalla sola, sin menú. Las cuentas con
+  // ese rol solo ven esto; el resto del equipo lo abre desde el menú.
+  if (me.role === 'punto' || section === 'punto') {
+    el.innerHTML = `
+      <div class="ck-point">
+        <header class="ck-point-top">
+          ${clinic.logo ? brandWithLogo(clinic.logo, clinic.name, muni ? 'Municipal' : 'Clínica') : '<img src="brand/kiltrazo.svg" alt="Kiltrazo" class="ck-logo">'}
+          <span class="ck-point-where">${esc(clinic.name)}</span>
+          ${me.role === 'punto' ? '<a href="#/" class="small">Salir</a>' : '<a href="#/clinica" class="btn small ghost">Salir del punto</a>'}
+        </header>
+        <section class="ck-point-main" id="ck-main"></section>
+      </div>`;
+    return point(el.querySelector('#ck-main'), {}, { clinic, me, user: s.user, refresh });
+  }
+
   const link = (key, href, label, badge = 0, hot = false) =>
     `<a href="${href}" class="ck-nav ${section === key ? 'on' : ''}">${label}${badge ? `<span class="ck-count ${hot ? 'hot' : ''}">${badge}</span>` : ''}</a>`;
   const later = (label, phase) => `<span class="ck-nav later">${label}<span class="ck-count">Fase ${phase}</span></span>`;
@@ -116,6 +133,7 @@ export default async function clinicApp(el, path, { refresh }) {
           ${link('agenda', '#/clinica', 'Agenda de hoy', pending, true)}
           ${link('operativos', '#/clinica/operativos', 'Operativos')}
           ${link('pacientes', '#/clinica/pacientes', 'Animales')}
+          ${link('punto', '#/clinica/punto', '📷 Punto de registro')}
           ${link('perdidos', '#/clinica/perdidos', 'Perdidos y encontrados')}
           ${link('sala', '#/clinica/sala', 'Sala de espera', inRoom)}
           ${link('vacunas', '#/clinica/vacunas', 'Vacunas por vencer', due.length)}
@@ -126,6 +144,7 @@ export default async function clinicApp(el, path, { refresh }) {
           ${link('solicitudes', '#/clinica/solicitudes', 'Solicitudes de hora', asked.length, true)}
           ${clinic.homeVisits ? link('domicilio', '#/clinica/domicilio', 'A domicilio', homeToday) : ''}
           ${link('pacientes', '#/clinica/pacientes', 'Pacientes')}
+          ${link('punto', '#/clinica/punto', '📷 Punto de registro')}
           ${clinic.onlyHome ? '' : link('sala', '#/clinica/sala', 'Sala de espera', inRoom)}
           ${link('vacunas', '#/clinica/vacunas', 'Vacunas por vencer', due.length)}
           ${link('equipo', '#/clinica/equipo', 'Equipo')}
