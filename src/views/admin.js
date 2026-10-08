@@ -5,7 +5,7 @@ import {
 } from '../data.js';
 import { generateVapidKeys } from '../notify.js';
 import { mountEmailLogin } from './login-email.js';
-import { esc, timeAgo, toast, changed } from '../ui.js';
+import { esc, timeAgo, toast, changed, go } from '../ui.js';
 import { SPECIES, describe } from '../breeds.js';
 import { zip, fromDataUrl } from '../zip.js';
 import { THRESHOLDS, SUGGEST_MARGIN } from '../biometrics.js';
@@ -782,7 +782,10 @@ async function clinicas(panel, { refresh }, muni = false) {
             <p class="invite-code" data-code hidden></p>
             <p class="muted small">La persona entra a ${esc(link)}, crea su cuenta, toca "Me invitaron" y escribe el código. Queda como administradora. Sirve una vez y dura 7 días.</p>
           </details>
-          <button type="button" class="link danger small admin-del" data-delclinic>Eliminar ${word}</button>
+          <div class="row-actions">
+            <button type="button" class="btn small" data-enter>👀 Entrar a esta ${word}</button>
+            <button type="button" class="link danger small admin-del" data-delclinic>Eliminar ${word}</button>
+          </div>
         </div>`;
   }
   const link = `${location.origin}${location.pathname}#/${muni ? 'municipio' : 'clinica'}`;
@@ -829,6 +832,14 @@ async function clinicas(panel, { refresh }, muni = false) {
       toast(err.message, 'bad');
       b.disabled = false;
     }
+  }));
+  // Abre Kiltrazo Clínica (o Municipal) dentro de esa clínica, como si la administrara.
+  panel.querySelectorAll('[data-enter]').forEach((b) => b.addEventListener('click', async () => {
+    const { setVisiting, setActiveClinic } = await import('../clinic/data.js');
+    const id = b.closest('[data-c]').dataset.c;
+    setVisiting(id);
+    setActiveClinic(id);
+    go(muni ? '#/municipio' : '#/clinica');
   }));
   panel.querySelectorAll('[data-delclinic]').forEach((b) => b.addEventListener('click', async () => {
     const clinic = clinics.find((c) => c.id === b.closest('[data-c]').dataset.c);

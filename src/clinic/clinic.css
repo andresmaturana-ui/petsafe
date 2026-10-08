@@ -32,6 +32,10 @@ body.clinic-mode #view { padding: 0; display: block; }
 .ck-me span { color: var(--muted); }
 
 .ck-main { padding: 22px 28px 40px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+#ck-view { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ck-admin-visit { margin: 0; padding: 10px 14px; border-radius: 14px; background: #fff1d6; color: #6b4a00; border: 1px solid #f0d48a; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 0.92rem; }
+.ck-admin-visit span { flex: 1 1 0; min-width: 200px; }
+.ck-admin-visit .btn { margin: 0 0 0 auto; flex: none; width: auto; }
 .ck-main .card { padding: 18px; border-radius: 18px; box-shadow: 0 2px 10px rgba(152, 92, 52, 0.08); border: 1px solid var(--line); }
 .ck-main h2 { font-size: 1.05rem; }
 .ck-main h3 { margin: 0 0 8px; font-size: 0.95rem; }
