@@ -128,7 +128,6 @@ export default async function clinicApp(el, path, { refresh }) {
 
   const link = (key, href, label, badge = 0, hot = false) =>
     `<a href="${href}" class="ck-nav ${section === key ? 'on' : ''}">${label}${badge ? `<span class="ck-count ${hot ? 'hot' : ''}">${badge}</span>` : ''}</a>`;
-  const later = (label, phase) => `<span class="ck-nav later">${label}<span class="ck-count">Fase ${phase}</span></span>`;
   const navs = muni ? `
           ${link('agenda', '#/clinica', 'Agenda de hoy', pending, true)}
           ${link('operativos', '#/clinica/operativos', 'Operativos')}
@@ -137,9 +136,7 @@ export default async function clinicApp(el, path, { refresh }) {
           ${link('perdidos', '#/clinica/perdidos', 'Perdidos y encontrados')}
           ${link('sala', '#/clinica/sala', 'Sala de espera', inRoom)}
           ${link('vacunas', '#/clinica/vacunas', 'Vacunas por vencer', due.length)}
-          ${link('equipo', '#/clinica/equipo', 'Equipo')}
-          <a href="#/clinica" class="ck-nav" data-keep>🩺 Kiltrazo Clínica</a>
-          ${later('Denuncias', 2)}${later('Adopciones', 3)}${later('Estadísticas', 3)}` : `
+          ${link('equipo', '#/clinica/equipo', 'Equipo')}` : `
           ${link('agenda', '#/clinica', 'Agenda de hoy', pending, true)}
           ${link('solicitudes', '#/clinica/solicitudes', 'Solicitudes de hora', asked.length, true)}
           ${clinic.homeVisits ? link('domicilio', '#/clinica/domicilio', 'A domicilio', homeToday) : ''}
@@ -148,9 +145,12 @@ export default async function clinicApp(el, path, { refresh }) {
           ${clinic.onlyHome ? '' : link('sala', '#/clinica/sala', 'Sala de espera', inRoom)}
           ${link('vacunas', '#/clinica/vacunas', 'Vacunas por vencer', due.length)}
           ${link('equipo', '#/clinica/equipo', 'Equipo')}
-          <a href="manuales/Manual-Kiltrazo-Clinica.pdf" class="ck-nav" target="_blank" rel="noopener" download>📘 Manual (PDF)</a>
-          ${munis.length ? '' : '<a href="#/municipio" class="ck-nav">🏛️ Kiltrazo Municipal</a>'}
-          ${later('Hospitalización', 2)}${later('Documentos', 2)}${later('Inventario', 3)}${later('Caja y boletas', 4)}${later('Reportes', 5)}`;
+          <a href="manuales/Manual-Kiltrazo-Clinica.pdf" class="ck-nav" target="_blank" rel="noopener" download>📘 Manual (PDF)</a>`;
+  // Cada menú muestra solo lo suyo: en la clínica no aparecen municipalidades
+  // ni en la municipalidad clínicas. Si la misma cuenta tiene las dos, abajo
+  // queda un enlace chico para pasar a la otra.
+  const mine = clinics.filter((c) => isMuni(c) === muni);
+  const other = muni ? clinics.some((c) => !isMuni(c)) : munis.length > 0;
   const reviewNote = muni
     ? '🕒 Tu municipalidad está en revisión por Kiltrazo. Ya puedes crear fichas y preparar operativos. Cuando la aprobemos, los vecinos podrán reservar cupos y verás los perdidos y encontrados de la comuna.'
     : `🕒 Tu clínica está en revisión por Kiltrazo. Ya puedes usar la agenda y las fichas. Cuando la aprobemos, podrás aparecer en el mapa y recibir horas desde la app.${
@@ -160,8 +160,8 @@ export default async function clinicApp(el, path, { refresh }) {
     <div class="ck">
       <aside class="ck-side">
         <div class="ck-brand">${clinic.logo ? brandWithLogo(clinic.logo, clinic.name, muni ? 'Municipal' : 'Clínica') : `<img src="brand/kiltrazo.svg" alt="Kiltrazo" class="ck-logo"><b>${muni ? 'Municipal' : 'Clínica'}</b>`}</div>
-        ${clinics.length > 1
-          ? `<select class="ck-clinic-pick" aria-label="Clínica">${clinics.map((c) => `<option value="${c.id}" ${c.id === clinic.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`
+        ${mine.length > 1
+          ? `<select class="ck-clinic-pick" aria-label="${muni ? 'Municipalidad' : 'Clínica'}">${mine.map((c) => `<option value="${c.id}" ${c.id === clinic.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`
           : `<div class="ck-clinic">${esc(clinic.name)}</div>`}
         ${clinic.approved === false ? `<p class="ck-review">${reviewNote}</p>` : ''}
         <nav class="ck-navs">${navs}
@@ -169,6 +169,7 @@ export default async function clinicApp(el, path, { refresh }) {
         <div class="ck-me">
           <strong>${esc(me.name || s.user.email || '')}</strong>
           <span>${esc(roleName(me.role, clinic))}</span>
+          ${other ? (muni ? '<a href="#/clinica" data-keep>Ir a mi clínica</a>' : '<a href="#/municipio">Ir a mi municipalidad</a>') : ''}
           <a href="#/">Volver a Kiltrazo</a>
         </div>
       </aside>
