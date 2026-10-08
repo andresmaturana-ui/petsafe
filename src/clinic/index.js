@@ -4,7 +4,7 @@
 
 import './clinic.css';
 import { esc, go } from '../ui.js';
-import { session, myClinics, members, activeClinicId, setActiveClinic, listAppointments, dueVaccines, runReminders, pendingRequests, today, isMuni } from './data.js';
+import { session, myClinics, visitClinic, visitingId, setVisiting, members, activeClinicId, setActiveClinic, listAppointments, dueVaccines, runReminders, pendingRequests, today, isMuni } from './data.js';
 import { roleName } from './ui.js';
 import { brandWithLogo } from './logo.js';
 import start from './views/start.js';
@@ -74,9 +74,17 @@ export default async function clinicApp(el, path, { refresh }) {
   if (!s.user) return start(el, { session: s, refresh, pendingCode: muniEntry ? null : pendingLink(sub), muni: muniEntry });
 
   const clinics = await myClinics(s.user.id);
+  // El administrador de Kiltrazo entró desde Admin → Clínicas a una que no es suya.
+  // Si ya es parte de su equipo, entra como siempre.
+  const visitId = visitingId();
+  const visit = visitId && !clinics.some((c) => c.id === visitId) && (await visitClinic(visitId).catch(() => null));
+  if (visit) clinics.unshift(visit);
+  else setVisiting('');
   const munis = clinics.filter(isMuni);
   const active = clinics.find((c) => c.id === activeClinicId());
-  if (muniEntry) {
+  if (visit) {
+    setActiveClinic(visit.id);
+  } else if (muniEntry) {
     if (!munis.length) return start(el, { session: s, refresh, muni: true });
     if (!isMuni(active)) setActiveClinic(munis[0].id);
   } else {
@@ -105,7 +113,8 @@ export default async function clinicApp(el, path, { refresh }) {
     dueVaccines(clinic.id, 14),
     pendingRequests(clinic.id),
   ]);
-  const me = team.find((m) => m.userId === s.user.id) || { userId: s.user.id, name: '', role: clinic.role };
+  const me = team.find((m) => m.userId === s.user.id)
+    || { userId: s.user.id, name: clinic.visiting ? 'Kiltrazo (administrador)' : '', role: clinic.role, isAdmin: clinic.isAdmin };
   const { view, section, params } = resolve(sub);
   const pending = todayList.filter((a) => ['agendada', 'en_camino', 'en_sala', 'en_atencion'].includes(a.status)).length;
   const homeToday = todayList.filter((a) => a.place === 'domicilio' && ['agendada', 'en_camino', 'en_atencion'].includes(a.status)).length;
@@ -160,20 +169,24 @@ export default async function clinicApp(el, path, { refresh }) {
     <div class="ck">
       <aside class="ck-side">
         <div class="ck-brand">${clinic.logo ? brandWithLogo(clinic.logo, clinic.name, muni ? 'Municipal' : 'Clínica') : `<img src="brand/kiltrazo.svg" alt="Kiltrazo" class="ck-logo"><b>${muni ? 'Municipal' : 'Clínica'}</b>`}</div>
-        ${mine.length > 1
+        ${mine.length > 1 && !visit
           ? `<select class="ck-clinic-pick" aria-label="${muni ? 'Municipalidad' : 'Clínica'}">${mine.map((c) => `<option value="${c.id}" ${c.id === clinic.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`
           : `<div class="ck-clinic">${esc(clinic.name)}</div>`}
         ${clinic.approved === false ? `<p class="ck-review">${reviewNote}</p>` : ''}
         <nav class="ck-navs">${navs}
         </nav>
         <div class="ck-me">
-          <strong>${esc(me.name || s.user.email || '')}</strong>
-          <span>${esc(roleName(me.role, clinic))}</span>
-          ${other ? (muni ? '<a href="#/clinica" data-keep>Ir a mi clínica</a>' : '<a href="#/municipio">Ir a mi municipalidad</a>') : ''}
-          <a href="#/">Volver a Kiltrazo</a>
+          <strong>${esc(visit ? s.user.email : me.name || s.user.email || '')}</strong>
+          <span>${visit ? 'Administrador de Kiltrazo' : esc(roleName(me.role, clinic))}</span>
+          ${visit ? '<a href="#/admin" data-leave>Volver al Admin</a>' : `${other ? (muni ? '<a href="#/clinica" data-keep>Ir a mi clínica</a>' : '<a href="#/municipio">Ir a mi municipalidad</a>') : ''}
+          <a href="#/">Volver a Kiltrazo</a>`}
         </div>
       </aside>
-      <section class="ck-main" id="ck-main"></section>
+      <section class="ck-main" id="ck-main">${visit ? `
+        <p class="ck-admin-visit"><span>👀 Estás dentro de <b>${esc(clinic.name)}</b> como administrador de Kiltrazo. Puedes ver y cambiar todo, igual que quien la administra.</span>
+          <button type="button" class="btn small secondary" data-leave>Salir</button></p>` : ''}
+        <div id="ck-view"></div>
+      </section>
     </div>`;
 
   el.querySelector('.ck-clinic-pick')?.addEventListener('change', (e) => {
@@ -183,7 +196,13 @@ export default async function clinicApp(el, path, { refresh }) {
     else location.hash = next;
   });
 
-  const main = el.querySelector('#ck-main');
+  el.querySelectorAll('[data-leave]').forEach((b) => b.addEventListener('click', (e) => {
+    e.preventDefault();
+    setVisiting('');
+    location.hash = '#/admin';
+  }));
+
+  const main = el.querySelector('#ck-view');
   await view(main, params, { clinic, me, team, user: s.user, refresh });
 }
 

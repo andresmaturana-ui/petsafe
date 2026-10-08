@@ -8,7 +8,7 @@ import * as local from './data-local.js';
 const B = CLOUD ? remote : local;
 
 export const {
-  session, myClinics, members, removeMember, saveClinic, createClinic, joinClinic, createInvite, setClinicAdmin, allClinics, deleteClinic, approveClinic,
+  session, myClinics, visitClinic, members, removeMember, saveClinic, createClinic, joinClinic, createInvite, setClinicAdmin, allClinics, deleteClinic, approveClinic,
   linkPet, createPetCode, petHealth, unlinkPet, runReminders, fileUrls,
   requestAppointment, alertEmergency, cancelMyAppointment, myAppointment, confirmMyAppointment, notifyAppointment, createTransferCode, transferInfo, claimTransfer, acceptTransfer,
   saveReview, nearbyClinics, listBanners, saveBanner, deleteBanner, bannerClick, saveSpecialties, saveSchedule, busyElsewhere, availableSlots, publicClinic, guestRequestAppointment,
@@ -26,6 +26,17 @@ export function activeClinicId() {
 }
 export function setActiveClinic(id) {
   try { localStorage.setItem(KEY, id); } catch { /* sin almacenamiento */ }
+}
+
+// ---------- El administrador de Kiltrazo dentro de una clínica ----------
+
+// Solo en esta pestaña: al cerrarla vuelve a ser él mismo.
+const VISIT = 'kiltrazo-visita';
+export function visitingId() {
+  try { return sessionStorage.getItem(VISIT) || ''; } catch { return ''; }
+}
+export function setVisiting(id) {
+  try { id ? sessionStorage.setItem(VISIT, id) : sessionStorage.removeItem(VISIT); } catch { /* sin almacenamiento */ }
 }
 
 // ---------- Pacientes ----------

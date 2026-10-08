@@ -1053,25 +1053,27 @@ create table if not exists public.pet_codes (
   created_at timestamptz not null default now()
 );
 
+-- El administrador de Kiltrazo (is_admin) entra a cualquier clínica o
+-- municipalidad como si fuera su administrador (Admin → Clínicas → Entrar).
 create or replace function public.is_clinic_member(p_clinic uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid());
+  select exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid()) or is_admin();
 $$;
 
 -- Para las reglas del bucket, donde la carpeta es texto.
 create or replace function public.is_clinic_folder(p_folder text) returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from clinic_members where clinic_id::text = p_folder and user_id = auth.uid());
+  select exists (select 1 from clinic_members where clinic_id::text = p_folder and user_id = auth.uid()) or is_admin();
 $$;
 
 create or replace function public.is_clinic_vet(p_clinic uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid() and role = 'vet');
+  select exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid() and role = 'vet') or is_admin();
 $$;
 
 create or replace function public.is_clinic_admin(p_clinic uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid() and is_admin);
+  select exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid() and is_admin) or is_admin();
 $$;
 
 -- Códigos fáciles de dictar: sin 0/O ni 1/I/L.
