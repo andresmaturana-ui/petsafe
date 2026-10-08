@@ -149,7 +149,7 @@ export async function removeMyPet(user, petId) {
  */
 // Sin nube no hay página de Facebook.
 export async function facebookPage() {
-  return '';
+  return null;
 }
 
 export async function reportLost(pet, point = null) {

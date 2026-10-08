@@ -7,7 +7,7 @@ import { NEARBY_KM } from '../geo.js';
 // "Perdí mi mascota": el dueño marca dónde se perdió, avisamos a las personas
 // a 5 km y buscamos en los avisos de "encontré".
 export default async function lost(el, _params, { user }) {
-  const [pets, fbPage] = await Promise.all([myPets(user), facebookPage().catch(() => '')]);
+  const [pets, fbPage] = await Promise.all([myPets(user), facebookPage().catch(() => null)]);
 
   if (!pets.length) {
     el.innerHTML = `
@@ -55,7 +55,7 @@ export default async function lost(el, _params, { user }) {
           <p class="note">📣 Avisaremos a las personas de Kiltrazo que estén a ${NEARBY_KM} km o menos de este punto. Verán su foto, su nombre y la zona aproximada, nunca tus datos.</p>
           ${fbPage ? `
           <label class="consent fb-share"><input type="checkbox" data-fb checked>
-            <span>Publicar también en la <a href="${esc(fbPage)}" target="_blank" rel="noopener">página de Facebook de Kiltrazo</a> (su foto, su nombre y el sector). La borramos sola cuando vuelva a casa.</span></label>` : ''}
+            <span>Publicar también en ${social(fbPage)} (su foto, su nombre y el sector). La borramos sola cuando vuelva a casa.</span></label>` : ''}
           <button class="btn primary big" data-send>Avisar a los vecinos</button>
           <button class="btn ghost" data-skip>Seguir sin avisar cerca</button>
         </div>`;
@@ -95,7 +95,7 @@ export default async function lost(el, _params, { user }) {
         <div class="empty-emoji">📣</div>
         <h2>Aviso activo para ${esc(pet.name)}</h2>
         ${neighbors(res.notified)}
-        ${fb ? `<p class="note">📘 Lo publicaremos en la <a href="${esc(fbPage)}" target="_blank" rel="noopener">página de Facebook de Kiltrazo</a>. Cuando vuelva a casa, la publicación se borra sola.</p>` : ''}
+        ${fb ? `<p class="note">📣 Lo publicaremos en ${social(fbPage)}. Cuando vuelva a casa, la publicación se borra sola.</p>` : ''}
         <p>${res.suggestions.length ? 'No hay una coincidencia segura, pero alguien encontró mascotas parecidas. ¿Es alguna de estas?' : 'Todavía nadie la ha escaneado. Te enviaremos una notificación apenas alguien la encuentre.'}</p>
       </div>
       ${res.suggestions.length ? `
@@ -129,4 +129,12 @@ function neighbors(n) {
   if (n == null) return '';
   if (!n) return `<p class="note">Por ahora nadie a ${NEARBY_KM} km activó los avisos cerca. Si alguien la escanea, igual te avisamos.</p>`;
   return `<p class="scan-ok">📣 Avisamos a ${n} persona${n === 1 ? '' : 's'} a ${NEARBY_KM} km o menos.</p>`;
+}
+
+// "el Facebook y el Instagram de Kiltrazo", con sus enlaces.
+function social({ facebook, instagram }) {
+  const link = (url, name) => `<a href="${esc(url)}" target="_blank" rel="noopener">${name}</a>`;
+  return instagram
+    ? `el ${link(facebook, 'Facebook')} y el ${link(instagram, 'Instagram')} de Kiltrazo`
+    : `la ${link(facebook, 'página de Facebook de Kiltrazo')}`;
 }

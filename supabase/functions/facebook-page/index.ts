@@ -1,6 +1,7 @@
 // Kiltrazo: publica las mascotas perdidas en la página de Facebook de
-// Kiltrazo (si el dueño lo eligió) y borra la publicación cuando vuelven a
-// casa o se eliminan.
+// Kiltrazo y, si la página tiene una cuenta de Instagram profesional
+// conectada, también en Instagram (publicación + historia). Solo si el dueño
+// lo eligió; todo se borra cuando vuelven a casa o se eliminan.
 //
 // La base de datos la llama con { pet } cuando cambia el estado de una
 // mascota (ver facebook_sync() en supabase/schema.sql). La función mira el
@@ -34,11 +35,16 @@ async function graph(path: string, init: RequestInit = {}) {
 async function check() {
   if (!PAGE || !TOKEN) return new Response('Faltan los secretos FACEBOOK_PAGE_ID y FACEBOOK_PAGE_TOKEN.', { status: 500 });
   try {
-    const page = await graph(`${PAGE}?fields=name,link`);
+    const page = await graph(`${PAGE}?fields=name,link,instagram_business_account{username}`);
     await db.from('app_settings').upsert({ key: 'facebook_page', value: page.link || `https://www.facebook.com/${PAGE}` });
-    return new Response(`Listo: Kiltrazo publicará en la página "${page.name}".`);
+    const ig = page.instagram_business_account?.username;
+    if (ig) await db.from('app_settings').upsert({ key: 'instagram_account', value: `https://www.instagram.com/${ig}/` });
+    else await db.from('app_settings').delete().eq('key', 'instagram_account');
+    return new Response(`Listo: Kiltrazo publicará en la página "${page.name}"${ig
+      ? ` y en Instagram (@${ig}).`
+      : '. Instagram no está conectado: la cuenta de Instagram debe ser profesional y estar vinculada a la página.'}`);
   } catch (err) {
-    await db.from('app_settings').delete().eq('key', 'facebook_page');
+    await db.from('app_settings').delete().in('key', ['facebook_page', 'instagram_account']);
     return new Response(`No se pudo conectar con la página: ${err.message}`, { status: 500 });
   }
 }
@@ -105,6 +111,16 @@ async function publish(pet: Record<string, any>) {
       ? await graph(`${PAGE}/photos`, { method: 'POST', body: form })
       : await graph(`${PAGE}/feed`, { method: 'POST', body: form });
     await db.from('facebook_posts').update({ post_id: post.post_id || post.id }).eq('pet_id', pet.id);
+    // Instagram necesita la foto en una dirección pública: se usa la que
+    // Facebook le dio a la foto recién publicada.
+    if (post.post_id) {
+      try {
+        const ig = await instagram(post.id, form.get('message') as string);
+        if (ig) await db.from('facebook_posts').update(ig).eq('pet_id', pet.id);
+      } catch (err) {
+        console.error('instagram', err);
+      }
+    }
     return 'publicada';
   } catch (err) {
     await db.from('facebook_posts').delete().eq('pet_id', pet.id);
@@ -112,8 +128,45 @@ async function publish(pet: Record<string, any>) {
   }
 }
 
+async function instagramId() {
+  const page = await graph(`${PAGE}?fields=instagram_business_account`);
+  return page.instagram_business_account?.id || '';
+}
+
+// Crea el contenedor, espera a que esté listo y lo publica.
+async function igPublish(ig: string, params: Record<string, string>) {
+  const { id } = await graph(`${ig}/media`, { method: 'POST', body: new URLSearchParams(params) });
+  for (let i = 0; i < 10; i++) {
+    const { status_code } = await graph(`${id}?fields=status_code`);
+    if (status_code === 'FINISHED') break;
+    if (status_code === 'ERROR' || status_code === 'EXPIRED') throw new Error(`Instagram: ${status_code}`);
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return (await graph(`${ig}/media_publish`, { method: 'POST', body: new URLSearchParams({ creation_id: id }) })).id;
+}
+
+async function instagram(photoId: string, caption: string) {
+  const ig = await instagramId();
+  if (!ig) return null;
+  const { images } = await graph(`${photoId}?fields=images`);
+  const url = images?.[0]?.source;
+  if (!url) return null;
+  const ig_post_id = await igPublish(ig, { image_url: url, caption });
+  let ig_story_id = null;
+  try {
+    ig_story_id = await igPublish(ig, { image_url: url, media_type: 'STORIES' });
+  } catch (err) {
+    console.error('historia', err);
+  }
+  return { ig_post_id, ig_story_id };
+}
+
 async function remove(petId: string) {
   const { data: row } = await db.from('facebook_posts').delete().eq('pet_id', petId).select().maybeSingle();
+  // Instagram: si no se puede borrar (ya no existe, o la historia venció), se sigue.
+  for (const id of [row?.ig_post_id, row?.ig_story_id].filter(Boolean)) {
+    await graph(id, { method: 'DELETE' }).catch((err) => console.error('borrar instagram', id, err.message));
+  }
   if (!row?.post_id) return 'nada que borrar';
   try {
     await graph(row.post_id, { method: 'DELETE' });

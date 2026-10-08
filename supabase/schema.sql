@@ -698,10 +698,10 @@ do $$ begin
   end if;
 end $$;
 
--- ---------- Página de Facebook de Kiltrazo ----------
+-- ---------- Página de Facebook (e Instagram) de Kiltrazo ----------
 -- Si el dueño lo elige al avisar que se perdió, la mascota se publica en la
--- página de Facebook de Kiltrazo y la publicación se borra cuando vuelve a
--- casa (o si se elimina la mascota). Lo hace la función facebook-page
+-- página de Facebook de Kiltrazo (y en su Instagram, si está conectado) y la
+-- publicación se borra cuando vuelve a casa (o si se elimina la mascota). Lo hace la función facebook-page
 -- (supabase/functions/facebook-page): se la llama con { pet } y ella mira el
 -- estado de la mascota para publicar o borrar. Aquí queda qué publicación es
 -- de qué mascota; no se borra junto con la mascota para poder quitarla.
@@ -710,6 +710,9 @@ create table if not exists public.facebook_posts (
   post_id text,
   created_at timestamptz not null default now()
 );
+-- Lo mismo en Instagram (publicación e historia), si la página lo tiene conectado.
+alter table public.facebook_posts add column if not exists ig_post_id text;
+alter table public.facebook_posts add column if not exists ig_story_id text;
 alter table public.facebook_posts enable row level security;
 
 create or replace function public.facebook_sync() returns trigger

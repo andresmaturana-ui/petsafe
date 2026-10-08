@@ -296,10 +296,11 @@ export async function reportLost(pet, point = null, fb = null) {
   return { match: r.id ? { id: r.id } : null, suggestions: rows(r.suggestions), notified: r.notified };
 }
 
-/** Dirección de la página de Facebook de Kiltrazo, si está conectada. */
+/** Páginas de Facebook e Instagram de Kiltrazo, si están conectadas. */
 export async function facebookPage() {
-  const row = await run(sb().from('app_settings').select('value').eq('key', 'facebook_page').maybeSingle());
-  return row?.value || '';
+  const rows = await run(sb().from('app_settings').select('key, value').in('key', ['facebook_page', 'instagram_account']));
+  const get = (k) => rows?.find((r) => r.key === k)?.value || '';
+  return get('facebook_page') ? { facebook: get('facebook_page'), instagram: get('instagram_account') } : null;
 }
 
 /** Lo que ve quien recibió el aviso de mascota perdida (sin datos del dueño). */

@@ -44,7 +44,7 @@ export default async function privacy(el) {
         <li>Para reconocer a tu mascota y avisarte si alguien la encuentra.</li>
         <li>Para que el dueño de una mascota que encontraste pueda contactarte.</li>
         <li>Si reportas tu mascota como perdida y marcas dónde se perdió, para avisar a las personas que estén a 5 km o menos. Ellas ven su foto, su nombre y la zona aproximada, nunca tus datos.</li>
-        <li>Solo si lo eliges al avisar que se perdió: su foto, su nombre y el sector se publican en la página de Facebook de Kiltrazo, nunca tus datos. La publicación se borra cuando vuelve a casa o si eliminas la mascota.</li>
+        <li>Solo si lo eliges al avisar que se perdió: su foto, su nombre y el sector se publican en la página de Facebook de Kiltrazo y en su Instagram, nunca tus datos. La publicación se borra cuando vuelve a casa o si eliminas la mascota.</li>
         <li>Solo si lo activaste: tu zona aproximada, para avisarte de mascotas perdidas a 5 km o menos. Nadie más la ve (ni el administrador) y se borra al desactivarlo en tu perfil.</li>
         <li>Tu comuna, para avisarte de los operativos de tu municipalidad (vacunación, esterilización, microchip). La municipalidad solo sabe a cuántas personas se avisó, nunca quiénes son.</li>
         <li>Solo si lo permitiste al registrar a tu mascota: para mejorar el reconocimiento de mascotas con las fotos de su escaneo. Esas fotos solo las ve el administrador y se borran si eliminas a tu mascota.</li>
