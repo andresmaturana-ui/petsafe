@@ -4,8 +4,9 @@
 // en Pacientes (o Animales), igual que si se hubiera creado a mano.
 
 import { esc, toast } from '../../ui.js';
-import { savePatient, createTransferCode, isMuni } from '../data.js';
+import { pointRegister, isMuni } from '../data.js';
 import { waLink } from '../ui.js';
+import { brandWithLogo } from '../logo.js';
 
 const KINDS = [['perro', '🐶 Perro'], ['gato', '🐱 Gato'], ['otro', '🐾 Otro']];
 
@@ -65,12 +66,9 @@ export default function point(el, _params, { clinic, me }) {
       const btn = form.querySelector('button.primary');
       btn.disabled = true;
       try {
-        const saved = await savePatient({
-          clinicId: clinic.id, name: f.name.trim(), species: f.species, photo: shot.photo, scan: shot.biometric,
-          tutorName: f.tutorName.trim(), tutorPhone: f.tutorPhone.trim(),
-        });
-        const code = await createTransferCode(saved.id);
-        await give(saved, code);
+        const p = { name: f.name.trim(), species: f.species, photo: shot.photo, scan: shot.biometric, tutorName: f.tutorName.trim(), tutorPhone: f.tutorPhone.trim() };
+        const { id, code } = await pointRegister(clinic.id, p);
+        await give({ ...p, id }, code);
       } catch (err) {
         toast(err.message, 'bad');
         btn.disabled = false;
@@ -96,11 +94,26 @@ export default function point(el, _params, { clinic, me }) {
           <button type="button" class="btn ghost" data-copy>Copiar enlace</button>
         </div>
         <button type="button" class="btn primary big" id="ck-point-next">Registrar otra mascota</button>
-        ${me?.role === 'punto' ? '' : `<a class="small" href="#/clinica/paciente/${esc(p.id)}">Ver ficha de ${esc(p.name)}</a>`}
+        ${me?.role === 'punto' || clinic.kind === 'kiltrazo' ? '' : `<a class="small" href="#/clinica/paciente/${esc(p.id)}">Ver ficha de ${esc(p.name)}</a>`}
       </div>`;
     el.querySelector('[data-copy]').addEventListener('click', () => navigator.clipboard?.writeText(url).then(() => toast('Enlace copiado', 'ok')));
     el.querySelector('#ck-point-next').addEventListener('click', film);
   }
 
   film();
+}
+
+/** El punto a pantalla completa, sin menú: arriba el logo, dónde y cómo salir. */
+export function pointScreen(el, { clinic, me, exit }) {
+  const brand = clinic.logo ? brandWithLogo(clinic.logo, clinic.name, isMuni(clinic) ? 'Municipal' : 'Clínica') : '<img src="brand/kiltrazo.svg" alt="Kiltrazo" class="ck-logo">';
+  el.innerHTML = `
+    <div class="ck-point">
+      <header class="ck-point-top">
+        ${brand}
+        <span class="ck-point-where">${esc(clinic.name)}</span>
+        ${exit}
+      </header>
+      <section class="ck-point-main" id="ck-main"></section>
+    </div>`;
+  return point(el.querySelector('#ck-main'), {}, { clinic, me });
 }

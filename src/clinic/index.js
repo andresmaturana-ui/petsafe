@@ -4,7 +4,7 @@
 
 import './clinic.css';
 import { esc, go } from '../ui.js';
-import { session, myClinics, visitClinic, visitingId, setVisiting, members, activeClinicId, setActiveClinic, listAppointments, dueVaccines, runReminders, pendingRequests, today, isMuni } from './data.js';
+import { session, myClinics, visitClinic, visitingId, setVisiting, members, activeClinicId, setActiveClinic, listAppointments, dueVaccines, runReminders, pendingRequests, today, isMuni, isPoint } from './data.js';
 import { roleName } from './ui.js';
 import { brandWithLogo } from './logo.js';
 import start from './views/start.js';
@@ -17,7 +17,7 @@ import requests, { homeVisits } from './views/requests.js';
 import review from './review.js';
 import drives, { driveForm, drive } from './views/drives.js';
 import board from './views/board.js';
-import point from './views/point.js';
+import point, { pointScreen } from './views/point.js';
 
 const ROUTES = [
   ['', agenda, 'agenda'],
@@ -73,7 +73,8 @@ export default async function clinicApp(el, path, { refresh }) {
   const s = await session();
   if (!s.user) return start(el, { session: s, refresh, pendingCode: muniEntry ? null : pendingLink(sub), muni: muniEntry });
 
-  const clinics = await myClinics(s.user.id);
+  // El Punto Kiltrazo (sin clínica) se abre aparte, en #/punto.
+  const clinics = (await myClinics(s.user.id)).filter((c) => !isPoint(c));
   // El administrador de Kiltrazo entró desde Admin → Clínicas a una que no es suya.
   // Si ya es parte de su equipo, entra como siempre.
   const visitId = visitingId();
@@ -123,16 +124,8 @@ export default async function clinicApp(el, path, { refresh }) {
   // Punto de reconocimiento facial: pantalla sola, sin menú. Las cuentas con
   // ese rol solo ven esto; el resto del equipo lo abre desde el menú.
   if (me.role === 'punto' || section === 'punto') {
-    el.innerHTML = `
-      <div class="ck-point">
-        <header class="ck-point-top">
-          ${clinic.logo ? brandWithLogo(clinic.logo, clinic.name, muni ? 'Municipal' : 'Clínica') : '<img src="brand/kiltrazo.svg" alt="Kiltrazo" class="ck-logo">'}
-          <span class="ck-point-where">${esc(clinic.name)}</span>
-          ${me.role === 'punto' ? '<a href="#/" class="small">Salir</a>' : '<a href="#/clinica" class="btn small ghost">Salir del punto</a>'}
-        </header>
-        <section class="ck-point-main" id="ck-main"></section>
-      </div>`;
-    return point(el.querySelector('#ck-main'), {}, { clinic, me, user: s.user, refresh });
+    const exit = me.role === 'punto' ? '<a href="#/" class="small">Salir</a>' : '<a href="#/clinica" class="btn small ghost">Salir del punto</a>';
+    return pointScreen(el, { clinic, me, exit });
   }
 
   const link = (key, href, label, badge = 0, hot = false) =>

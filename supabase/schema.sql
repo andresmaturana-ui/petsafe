@@ -2829,3 +2829,135 @@ alter table public.clinic_members drop constraint if exists clinic_members_role_
 alter table public.clinic_members add constraint clinic_members_role_check check (role in ('vet', 'recepcion', 'punto'));
 alter table public.clinic_invites drop constraint if exists clinic_invites_role_check;
 alter table public.clinic_invites add constraint clinic_invites_role_check check (role in ('vet', 'recepcion', 'punto'));
+
+-- ---------- Punto Kiltrazo (2026-10-08) ----------
+-- Un punto de reconocimiento facial propio de Kiltrazo, sin clínica: el
+-- administrador lo abre desde Admin y da (o quita) el permiso de punto a
+-- usuarios de la app. Por dentro es una "clínica" de tipo 'kiltrazo' que no
+-- aparece en mapas ni listas; las mascotas que registra quedan ahí hasta que
+-- su dueño las recibe, y entonces salen de la lista (no es su veterinaria).
+alter table public.clinics drop constraint if exists clinics_kind_check;
+alter table public.clinics add constraint clinics_kind_check check (kind in ('clinica', 'municipio', 'kiltrazo'));
+
+create or replace function public.kiltrazo_point() returns uuid
+language plpgsql security definer set search_path = public as $$
+declare c uuid;
+begin
+  if not is_admin() then raise exception 'Solo el administrador de Kiltrazo'; end if;
+  select id into c from clinics where kind = 'kiltrazo' order by created_at limit 1;
+  if c is null then
+    insert into clinics (name, address, phone, kind, approved, on_map, created_by)
+    values ('Punto Kiltrazo', '', '', 'kiltrazo', true, false, auth.uid()) returning id into c;
+  end if;
+  insert into clinic_members (clinic_id, user_id, name, role, is_admin)
+  select c, auth.uid(), coalesce(nullif(trim(concat_ws(' ', p.first_name, p.last_name)), ''), p.name, ''), 'vet', true
+  from (select 1) x left join profiles p on p.id = auth.uid()
+  on conflict (clinic_id, user_id) do update set role = 'vet', is_admin = true;
+  return c;
+end $$;
+grant execute on function public.kiltrazo_point() to authenticated;
+
+create or replace function public.admin_set_point(p_user uuid, p_on boolean) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare c uuid := kiltrazo_point();
+begin
+  if p_user = auth.uid() then return true; end if;
+  if p_on then
+    insert into clinic_members (clinic_id, user_id, name, role, is_admin)
+    select c, p_user, coalesce(nullif(trim(concat_ws(' ', p.first_name, p.last_name)), ''), p.name, ''), 'punto', false
+    from (select 1) x left join profiles p on p.id = p_user
+    on conflict (clinic_id, user_id) do update set role = 'punto', is_admin = false;
+  else
+    delete from clinic_members where clinic_id = c and user_id = p_user;
+  end if;
+  return true;
+end $$;
+grant execute on function public.admin_set_point(uuid, boolean) to authenticated;
+
+create or replace function public.claim_transfer(p_code text, p_pet uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare t clinic_transfers; o profiles; c text;
+begin
+  if not exists (select 1 from pets where id = p_pet and owner_id = auth.uid()) then raise exception 'Mascota no encontrada'; end if;
+  delete from clinic_transfers where code = upper(trim(p_code)) and created_at > now() - interval '7 days' returning * into t;
+  if t.code is null then raise exception 'El enlace ya se usó o venció. Pide uno nuevo a tu veterinaria.'; end if;
+  if exists (select 1 from clinic_patients where clinic_id = t.clinic_id and pet_id = p_pet and id <> t.patient_id) then
+    raise exception 'Esa mascota ya está vinculada a esta clínica';
+  end if;
+  select * into o from profiles where id = auth.uid();
+  update clinic_patients set pet_id = p_pet, tutor_user = auth.uid(),
+    tutor_name = coalesce(nullif(tutor_name, ''), nullif(trim(concat_ws(' ', o.first_name, o.last_name)), ''), o.name, ''),
+    tutor_phone = coalesce(nullif(tutor_phone, ''), o.phone, ''),
+    tutor_email = coalesce(nullif(tutor_email, ''), o.email, ''),
+    tutor_address = coalesce(nullif(tutor_address, ''), o.address, '')
+  where id = t.patient_id and pet_id is null;
+  if not found then raise exception 'Esta ficha ya está en la app de un tutor'; end if;
+  -- Del Punto Kiltrazo: entregada, sale de la lista (Kiltrazo no es su veterinaria).
+  update clinic_patients set removed_at = now()
+  where id = t.patient_id and exists (select 1 from clinics where id = t.clinic_id and kind = 'kiltrazo');
+  select name into c from clinics where id = t.clinic_id;
+  return c;
+end $$;
+
+create or replace function public.accept_transfer(p_code text) returns uuid
+language plpgsql security definer set search_path = public, extensions as $$
+declare cp clinic_patients; o profiles; c clinics; new_id uuid;
+begin
+  if auth.uid() is null then raise exception 'Sin sesión'; end if;
+  select p.* into cp from clinic_transfers t join clinic_patients p on p.id = t.patient_id
+  where t.code = upper(trim(p_code)) and t.created_at > now() - interval '7 days' and p.pet_id is null;
+  if cp.id is null then raise exception 'El enlace ya se usó o venció. Pide uno nuevo a tu veterinaria.'; end if;
+  if cp.scan is null then raise exception 'La clínica no filmó su cara. Regístrala tú desde la app.'; end if;
+  select * into o from profiles where id = auth.uid();
+  select * into c from clinics where id = cp.clinic_id;
+  insert into pets (owner_id, name, owner_name, diseases, vaccines, photo, species, breed)
+  values (auth.uid(), cp.name, coalesce(nullif(trim(concat_ws(' ', o.first_name, o.last_name)), ''), o.name, ''),
+          coalesce(nullif(cp.allergies, ''), ''), case when c.kind = 'kiltrazo' then '' else 'Las registra ' || c.name end,
+          cp.photo, coalesce(cp.species, ''), left(coalesce(cp.breed, ''), 80))
+  returning id into new_id;
+  insert into pet_samples (pet_id, kind, dino, mobilenet, basic)
+  select new_id, s.kind, s.dino, s.mobilenet, s.basic from bio_samples(cp.scan) s;
+  perform claim_transfer(p_code, new_id);
+  return new_id;
+end $$;
+
+-- Las cuentas punto (de una clínica, municipalidad o del Punto Kiltrazo) no
+-- ven fichas, agenda ni datos de dueños: solo registran con point_register.
+create or replace function public.is_clinic_member(p_clinic uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid() and role <> 'punto') or is_admin();
+$$;
+create or replace function public.is_clinic_folder(p_folder text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from clinic_members where clinic_id::text = p_folder and user_id = auth.uid() and role <> 'punto') or is_admin();
+$$;
+drop policy if exists "veo mi membresía" on public.clinic_members;
+create policy "veo mi membresía" on public.clinic_members for select using (user_id = auth.uid());
+drop policy if exists "veo dónde soy punto" on public.clinics;
+create policy "veo dónde soy punto" on public.clinics for select
+  using (exists (select 1 from clinic_members m where m.clinic_id = clinics.id and m.user_id = auth.uid()));
+
+-- Registrar una mascota en el punto y crear su enlace para el dueño.
+create or replace function public.point_register(
+  p_clinic uuid, p_name text, p_species text, p_photo text, p_scan jsonb, p_tutor_name text, p_tutor_phone text
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare p uuid; c text;
+begin
+  if not exists (select 1 from clinic_members where clinic_id = p_clinic and user_id = auth.uid()) then
+    raise exception 'No tienes permiso para este punto';
+  end if;
+  if coalesce(trim(p_name), '') = '' then raise exception 'Falta el nombre de la mascota'; end if;
+  if p_scan is null then raise exception 'Falta filmar su cara'; end if;
+  insert into clinic_patients (clinic_id, name, species, photo, scan, tutor_name, tutor_phone)
+  values (p_clinic, left(trim(p_name), 80), coalesce(p_species, ''), p_photo, p_scan,
+          left(coalesce(trim(p_tutor_name), ''), 80), left(coalesce(trim(p_tutor_phone), ''), 30))
+  returning id into p;
+  loop
+    c := short_code(8);
+    exit when not exists (select 1 from clinic_transfers where code = c);
+  end loop;
+  insert into clinic_transfers (code, patient_id, clinic_id) values (c, p, p_clinic);
+  return jsonb_build_object('id', p, 'code', c);
+end $$;
+grant execute on function public.point_register(uuid, text, text, text, jsonb, text, text) to authenticated;
