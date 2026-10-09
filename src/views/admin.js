@@ -653,7 +653,16 @@ async function estudio(panel, { refresh }) {
   const list = [...animals.values()];
   const twice = list.filter((a) => a.days.size >= 2).length;
   const mb = (videos.reduce((n, v) => n + (v.size || 0), 0) / 1048576).toFixed(0);
-  const wa = (g) => `https://wa.me/?text=${encodeURIComponent(`Hola, para filmar el estudio de Kiltrazo abre ${link} y escribe este código: ${g.code}`)}`;
+  const wa = (g) => `https://wa.me/?text=${encodeURIComponent(`¡Hola! Muchas gracias por ayudarnos con el estudio de reconocimiento facial de Kiltrazo para vacas y caballos 🐄🐴
+
+Para entrar al Punto de estudio abre este enlace en tu celular:
+${link}
+
+Y escribe tu código: *${g.code}*
+
+No necesitas crear cuenta ni instalar nada. En "¿Cómo se usa?" está el manual con todos los pasos.
+
+¡Gracias de nuevo por tu ayuda! 🙌`)}`;
   panel.innerHTML = `
     <div class="card">
       <h2>🐄 Estudio de ganado</h2>
