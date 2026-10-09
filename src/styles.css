@@ -889,3 +889,6 @@ a.card.tag-only { display: flex; gap: 12px; align-items: center; text-decoration
 .study-setup { margin: 8px 0; background: var(--cream); border-radius: 12px; padding: 8px 12px; }
 .study-setup > summary { display: block !important; font-weight: 700; color: var(--coral-dark); }
 .study-setup ol, .study-setup ul { padding-left: 1.2em; }
+body.web-mode:has(.study-head) #app { max-width: 560px; padding: 16px 16px 40px; }
+.study-code { letter-spacing: 0.08em; }
+.study-guest-btns { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }

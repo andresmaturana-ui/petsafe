@@ -553,8 +553,16 @@ export async function studyFile(path) {
   return new Uint8Array(await data.arrayBuffer());
 }
 
-export async function studyUsers() {
-  return (await run(sb().from('study_users').select('user_id'))).map((r) => r.user_id);
+/** Solo administrador: los invitados (Invitado 1, 2, ...) y cuántos celulares entraron con cada código. */
+export async function studyGuests() {
+  const [guests, users] = await Promise.all([
+    run(sb().from('study_guests').select('*').order('n')),
+    run(sb().from('study_users').select('guest')),
+  ]);
+  return rows(guests).map((g) => ({ ...g, devices: users.filter((u) => u.guest === g.id).length }));
 }
 
-export const setStudyUser = (userId, on) => run(sb().rpc('admin_set_study', { p_user: userId, p_on: on }));
+export const studyNewGuest = () => run(sb().rpc('admin_new_study_guest'));
+export const studyDeleteGuest = (id) => run(sb().rpc('admin_delete_study_guest', { p_id: id }));
+/** El invitado entra con su código. Devuelve su número. */
+export const studyJoin = (code) => run(sb().rpc('study_join', { p_code: code }));

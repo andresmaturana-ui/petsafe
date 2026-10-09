@@ -3017,37 +3017,73 @@ grant execute on function public.point_register(uuid, text, text, text, jsonb, t
 
 -- ---------- Estudio de ganado (2026-10-09) ----------
 -- Prueba para saber si el reconocimiento facial sirve con vacas y caballos.
--- Las personas a quienes el administrador da permiso filman la cara y el morro
--- de cada animal (con su autocrotal y sexo) desde #/estudio. Los videos quedan
--- en el bucket privado "estudio-ganado", en una carpeta por autocrotal, y solo
--- el administrador los ve y los descarga.
+-- El administrador crea invitados (Invitado 1, 2, ...) en Admin → Estudio, cada
+-- uno con su código. El invitado abre #/estudio, escribe el código (sin crear
+-- cuenta) y filma la cara y el morro de cada animal con su autocrotal y sexo.
+-- Los videos quedan en el bucket privado "estudio-ganado", una carpeta por
+-- autocrotal, y solo el administrador los ve y los descarga.
+create table if not exists public.study_guests (
+  id uuid primary key default gen_random_uuid(),
+  n integer not null,
+  code text not null unique,
+  created_at timestamptz not null default now()
+);
+alter table public.study_guests enable row level security;
+drop policy if exists "admin ve los invitados del estudio" on public.study_guests;
+create policy "admin ve los invitados del estudio" on public.study_guests for select using (is_admin());
+
+-- Qué sesión (celular) entró con qué código.
 create table if not exists public.study_users (
   user_id uuid primary key references auth.users on delete cascade,
+  guest uuid references public.study_guests on delete cascade,
   created_at timestamptz not null default now()
 );
 alter table public.study_users enable row level security;
-
-create or replace function public.study_ok() returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (select 1 from study_users where user_id = auth.uid()) or is_admin();
-$$;
-grant execute on function public.study_ok() to authenticated;
-
 drop policy if exists "admin ve quién filma el estudio" on public.study_users;
 create policy "admin ve quién filma el estudio" on public.study_users for select using (is_admin());
 
-create or replace function public.admin_set_study(p_user uuid, p_on boolean) returns boolean
+create or replace function public.study_ok() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from study_users u join study_guests g on g.id = u.guest where u.user_id = auth.uid()) or is_admin();
+$$;
+grant execute on function public.study_ok() to authenticated;
+
+create or replace function public.admin_new_study_guest() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare c text; g study_guests;
+begin
+  if not is_admin() then raise exception 'Solo el administrador de Kiltrazo'; end if;
+  loop
+    c := short_code(6);
+    exit when not exists (select 1 from study_guests where code = c);
+  end loop;
+  insert into study_guests (n, code) values ((select coalesce(max(n), 0) + 1 from study_guests), c) returning * into g;
+  return jsonb_build_object('id', g.id, 'n', g.n, 'code', g.code);
+end $$;
+grant execute on function public.admin_new_study_guest() to authenticated;
+
+create or replace function public.admin_delete_study_guest(p_id uuid) returns boolean
 language plpgsql security definer set search_path = public as $$
 begin
   if not is_admin() then raise exception 'Solo el administrador de Kiltrazo'; end if;
-  if p_on then
-    insert into study_users (user_id) values (p_user) on conflict do nothing;
-  else
-    delete from study_users where user_id = p_user;
-  end if;
+  delete from study_guests where id = p_id;
   return true;
 end $$;
-grant execute on function public.admin_set_study(uuid, boolean) to authenticated;
+grant execute on function public.admin_delete_study_guest(uuid) to authenticated;
+
+-- El invitado entra con su código. Devuelve su número (Invitado N).
+create or replace function public.study_join(p_code text) returns integer
+language plpgsql security definer set search_path = public as $$
+declare g study_guests;
+begin
+  if auth.uid() is null then raise exception 'Sin sesión'; end if;
+  select * into g from study_guests where code = upper(trim(p_code));
+  if g.id is null then raise exception 'Ese código no existe. Revísalo o pídele uno nuevo al administrador.'; end if;
+  insert into study_users (user_id, guest) values (auth.uid(), g.id)
+  on conflict (user_id) do update set guest = excluded.guest;
+  return g.n;
+end $$;
+grant execute on function public.study_join(text) to authenticated;
 
 create table if not exists public.study_videos (
   id uuid primary key default gen_random_uuid(),
@@ -3058,10 +3094,20 @@ create table if not exists public.study_videos (
   path text not null,
   size integer not null default 0,
   user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  guest integer,
   created_at timestamptz not null default now()
 );
 create index if not exists study_videos_tag on public.study_videos (tag);
 alter table public.study_videos enable row level security;
+-- El número de invitado lo pone la base de datos, no el celular.
+create or replace function public.study_video_guest() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.guest := (select g.n from study_users u join study_guests g on g.id = u.guest where u.user_id = auth.uid());
+  return new;
+end $$;
+drop trigger if exists study_video_guest on public.study_videos;
+create trigger study_video_guest before insert on public.study_videos for each row execute function public.study_video_guest();
 drop policy if exists "quien filma guarda el estudio" on public.study_videos;
 create policy "quien filma guarda el estudio" on public.study_videos for insert to authenticated
   with check (user_id = auth.uid() and study_ok());

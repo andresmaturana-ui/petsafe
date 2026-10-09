@@ -5,7 +5,7 @@
 // autocrotal, y el administrador los descarga desde Admin → Estudio.
 // No usa el detector de cabezas (está entrenado con perros y gatos).
 
-import { studyAccess, studySave, isAdmin, CLOUD } from '../data.js';
+import { studyAccess, studySave, studyJoin, isAdmin, CLOUD } from '../data.js';
 import { esc, toast } from '../ui.js';
 import { SITE_URL } from '../config.js';
 
@@ -40,28 +40,23 @@ function recorderType() {
 }
 const extOf = (type) => (/mp4/.test(type) ? 'mp4' : /quicktime/.test(type) ? 'mov' : 'webm');
 
-// Pasos para quien filma por primera vez: instalar la app, crear su cuenta y
-// pedir el permiso. En iPhone la app instalada no comparte la sesión de Safari,
-// por eso la cuenta se crea abriendo Kiltrazo desde el ícono.
+// No hace falta instalar la app: el punto funciona en el navegador. (La app
+// instalada abre en la portada y en iPhone no comparte el código con Safari,
+// así que instalarla solo complicaría a quien filma.)
 const setup = `
   <ol>
-    <li>Abre <strong>${SITE_URL.replace(/^https?:\/\//, '')}</strong> en el celular: en iPhone con <strong>Safari</strong>, en Android con <strong>Chrome</strong>.</li>
-    <li>Instala la app:
-      <ul>
-        <li><strong>iPhone:</strong> toca <strong>Compartir</strong> ⬆︎ (abajo), luego <strong>Agregar a pantalla de inicio</strong> y <strong>Agregar</strong>.</li>
-        <li><strong>Android:</strong> toca el menú <strong>⋮</strong> (arriba a la derecha) y luego <strong>Instalar app</strong> o <strong>Agregar a pantalla de inicio</strong>.</li>
-      </ul>
-    </li>
-    <li>Cierra el navegador y abre Kiltrazo desde el <strong>ícono nuevo</strong>.</li>
-    <li>En <strong>Perfil</strong>, completa tus datos y guarda tu cuenta con correo y clave (así no pierdes el permiso si cambias de celular).</li>
-    <li>Avísale al administrador de Kiltrazo tu nombre para que te dé el permiso. Después, en Perfil te aparece <strong>Punto de estudio</strong>.</li>
+    <li>Abre el enlace <strong>${SITE_URL.replace(/^https?:\/\//, '')}/#/estudio</strong> en el celular: en iPhone con <strong>Safari</strong>, en Android con <strong>Chrome</strong>. No hay que instalar nada.</li>
+    <li>Escribe tu código y toca <strong>Entrar</strong>. El celular lo recuerda.</li>
     <li>La primera vez que grabes, el celular pide permiso para usar la cámara: toca <strong>Permitir</strong>.</li>
+    <li>Si el enlace se abre dentro de WhatsApp y no deja grabar, toca ⋯ o ⋮ y elige <strong>Abrir en Safari</strong> o <strong>Abrir en Chrome</strong>.</li>
+    <li>Para volver otro día, abre el mismo enlace.</li>
   </ol>`;
+const manual = '<a class="btn secondary" href="manuales/Manual-Punto-de-estudio.pdf" target="_blank" rel="noopener" download>📘 Descargar el manual (PDF)</a>';
 
 const howTo = `
   <details class="card study-how" id="study-how">
     <summary><strong>¿Cómo se usa?</strong></summary>
-    <details class="study-setup"><summary>Antes de empezar (una sola vez): instalar la app</summary>${setup}</details>
+    <details class="study-setup"><summary>Antes de empezar</summary>${setup}</details>
     <ol>
       <li>Escribe el número del <strong>autocrotal</strong> del animal y marca si es bovino o caballo, y hembra o macho.</li>
       <li>Graba la <strong>cara</strong>: toca "Grabar", el video se corta solo a los 10 segundos.</li>
@@ -72,18 +67,13 @@ const howTo = `
     <p><strong>Consejos:</strong> filma con luz de día, sin contraluz, y con el animal tranquilo (en la manga o amarrado). Limpia el lente del celular.</p>
     <p><strong>Importante:</strong> otro día, idealmente a otra hora, se filman de nuevo los <strong>mismos animales</strong> con su mismo autocrotal. Así se mide si Kiltrazo los reconoce.</p>
     <p class="small muted">Se necesita internet para guardar. Cada video pesa unos pocos MB, así que conviene usar wifi si hay.</p>
+    ${manual}
   </details>`;
 
 export default async function studyPoint(el) {
   const admin = CLOUD ? await isAdmin().catch(() => false) : sessionStorage.getItem('petsafe-admin') === 'ok';
-  if (!admin && !(await studyAccess().catch(() => false))) {
-    el.innerHTML = `<div class="card"><h1>Punto de estudio</h1>
-      <p>Tu cuenta aún no tiene permiso para filmar el estudio de ganado. Sigue estos pasos:</p>
-      ${setup}
-      <a class="btn primary" href="#/">Ir al inicio</a></div>`;
-    return;
-  }
-  const exit = admin ? '<a href="#/admin" class="btn small ghost">Volver a Admin</a>' : '<a href="#/perfil" class="btn small ghost">Salir</a>';
+  if (!admin && !(await studyAccess().catch(() => false))) return enter(el, () => studyPoint(el));
+  const exit = admin ? '<a href="#/admin" class="btn small ghost">Volver a Admin</a>' : '';
   let animal = { tag: '', species: 'bovino', sex: 'hembra' };
   let stream = null;
   const stop = () => {
@@ -122,7 +112,6 @@ export default async function studyPoint(el) {
         <button class="btn primary big">Filmar la cara</button>
       </form>
       ${done.length ? `<div class="card"><h2>Filmados hoy en este celular (${done.length})</h2><p class="study-done">${done.map(esc).join(' · ')}</p></div>` : ''}`;
-    if (!done.length) el.querySelector('#study-how').open = true;
     el.querySelector('#study-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const f = new FormData(e.target);
@@ -252,4 +241,34 @@ export default async function studyPoint(el) {
   }
 
   data();
+}
+
+// Sin código todavía: el invitado escribe el que le dio el administrador.
+function enter(el, done) {
+  el.innerHTML = `
+    <div class="study-head"><h1>🐄 Punto de estudio</h1></div>
+    <form class="card form" id="study-code">
+      <p>Escribe el código que te dio el administrador de Kiltrazo. No necesitas crear cuenta.</p>
+      <label>Código<input name="code" required maxlength="12" autocomplete="off" autocapitalize="characters" placeholder="Ej.: K7P2QX"></label>
+      <button class="btn primary big">Entrar</button>
+    </form>
+    <details class="card study-how">
+      <summary><strong>¿Cómo se usa?</strong></summary>
+      <details class="study-setup"><summary>Antes de empezar</summary>${setup}</details>
+      <p>Después de entrar, por cada animal escribes su autocrotal, grabas su cara (10 segundos) y su morro (5 segundos). El manual tiene todos los pasos.</p>
+      ${manual}
+    </details>`;
+  el.querySelector('#study-code').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = e.target.querySelector('button');
+    b.disabled = true;
+    try {
+      const n = await studyJoin(new FormData(e.target).get('code'));
+      toast(`Entraste como Invitado ${n} 🐄`, 'ok');
+      done();
+    } catch (err) {
+      toast(err.message, 'bad');
+      b.disabled = false;
+    }
+  });
 }

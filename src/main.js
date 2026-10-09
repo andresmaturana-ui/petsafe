@@ -182,7 +182,7 @@ async function render() {
   // Quien llega por primera vez, sin perfil, ve la presentación de Kiltrazo.
   if (!isComplete(user) && view === home) view = landing;
   // Estas páginas se ven sin la app: sin menú y sin pedir el perfil.
-  document.body.classList.toggle('web-mode', [clinicPage, finder, landing, tag, seen, drivePage].includes(view));
+  document.body.classList.toggle('web-mode', [clinicPage, finder, landing, tag, seen, drivePage, studyPoint].includes(view));
   document.body.classList.toggle('finder-mode', view === finder || view === landing);
   // Primer uso, o perfil creado antes de pedir todos los datos: completar perfil.
   if (!isComplete(user) && ![profile, admin, password, privacy, terms, clinicPage, finder, landing, moved, tag, seen, drivePage, kiltrazoPoint, studyPoint].includes(view)) view = profile;

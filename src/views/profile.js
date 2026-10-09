@@ -123,7 +123,6 @@ export default async function profile(el, _params, { user, refresh }) {
       </div>
 
       <div id="point-card" hidden></div>
-      <div id="study-card" hidden></div>
 
       ${others.length ? `
         <div class="card">
@@ -181,19 +180,6 @@ export default async function profile(el, _params, { user, refresh }) {
         <a class="btn primary" href="#/punto">Abrir punto</a>
       </div>`;
     }).catch((err) => console.warn('Punto', err));
-  }
-
-  // Estudio de ganado: a quien el administrador le dio permiso para filmar.
-  const studyBox = el.querySelector('#study-card');
-  if (studyBox) {
-    import('../data.js').then(({ studyAccess }) => studyAccess()).then((ok) => {
-      if (!ok) return;
-      studyBox.outerHTML = `<div class="card">
-        <h2>🐄 Punto de estudio</h2>
-        <p>Kiltrazo te dio permiso para filmar vacas y caballos para el estudio de reconocimiento facial.</p>
-        <a class="btn primary" href="#/estudio">Abrir punto de estudio</a>
-      </div>`;
-    }).catch((err) => console.warn('Estudio', err));
   }
 
   const nearbyBox = el.querySelector('#nearby');
