@@ -486,3 +486,28 @@ export async function tagStats() {
     months: [],
   };
 }
+
+// ---------- Estudio de ganado ----------
+// En modo local (pruebas) lo filmado queda en memoria hasta recargar.
+
+const study = { videos: [], users: new Set(), files: new Map() };
+
+export async function studyAccess() {
+  const me = await currentUser();
+  return sessionStorage.getItem('petsafe-admin') === 'ok' || study.users.has(me?.id);
+}
+
+export async function studySave({ tag, species, sex, part, blob, ext }) {
+  const me = await currentUser();
+  const path = `${tag}/${now().replace(/[:.]/g, '-').slice(0, 19)}-${part}.${ext}`;
+  study.files.set(path, new Uint8Array(await blob.arrayBuffer()));
+  study.videos.unshift({ id: uid('sv_'), tag, species, sex, part, path, size: blob.size, userId: me?.id, createdAt: now() });
+}
+
+export const studyList = async () => [...study.videos];
+export const studyFile = async (path) => study.files.get(path);
+export const studyUsers = async () => [...study.users];
+export async function setStudyUser(userId, on) {
+  if (on) study.users.add(userId);
+  else study.users.delete(userId);
+}

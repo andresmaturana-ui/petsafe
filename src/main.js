@@ -35,6 +35,7 @@ import landing from './views/landing.js';
 import gift, { pendingGift, GIFT_KEY } from './views/gift.js';
 import moved from './views/moved.js';
 import kiltrazoPoint from './views/kiltrazo-point.js';
+import studyPoint from './views/study.js';
 import { leaveIfMoved, arriveAfterMove } from './move.js';
 
 registerSW({ immediate: true });
@@ -106,6 +107,7 @@ const routes = [
   ['c/:slug/:step', clinicPage],
   ['operativo/:id', drivePage],
   ['punto', kiltrazoPoint],
+  ['estudio', studyPoint],
 ];
 
 function resolve(hash) {
@@ -183,7 +185,7 @@ async function render() {
   document.body.classList.toggle('web-mode', [clinicPage, finder, landing, tag, seen, drivePage].includes(view));
   document.body.classList.toggle('finder-mode', view === finder || view === landing);
   // Primer uso, o perfil creado antes de pedir todos los datos: completar perfil.
-  if (!isComplete(user) && ![profile, admin, password, privacy, terms, clinicPage, finder, landing, moved, tag, seen, drivePage, kiltrazoPoint].includes(view)) view = profile;
+  if (!isComplete(user) && ![profile, admin, password, privacy, terms, clinicPage, finder, landing, moved, tag, seen, drivePage, kiltrazoPoint, studyPoint].includes(view)) view = profile;
 
   const tab = hash.replace(/^#\/?/, '').split('/')[0];
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));

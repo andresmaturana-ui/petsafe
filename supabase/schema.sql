@@ -3014,3 +3014,70 @@ begin
   return jsonb_build_object('id', p, 'code', c);
 end $$;
 grant execute on function public.point_register(uuid, text, text, text, jsonb, text, text) to authenticated;
+
+-- ---------- Estudio de ganado (2026-10-09) ----------
+-- Prueba para saber si el reconocimiento facial sirve con vacas y caballos.
+-- Las personas a quienes el administrador da permiso filman la cara y el morro
+-- de cada animal (con su autocrotal y sexo) desde #/estudio. Los videos quedan
+-- en el bucket privado "estudio-ganado", en una carpeta por autocrotal, y solo
+-- el administrador los ve y los descarga.
+create table if not exists public.study_users (
+  user_id uuid primary key references auth.users on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.study_users enable row level security;
+
+create or replace function public.study_ok() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from study_users where user_id = auth.uid()) or is_admin();
+$$;
+grant execute on function public.study_ok() to authenticated;
+
+drop policy if exists "admin ve quién filma el estudio" on public.study_users;
+create policy "admin ve quién filma el estudio" on public.study_users for select using (is_admin());
+
+create or replace function public.admin_set_study(p_user uuid, p_on boolean) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if not is_admin() then raise exception 'Solo el administrador de Kiltrazo'; end if;
+  if p_on then
+    insert into study_users (user_id) values (p_user) on conflict do nothing;
+  else
+    delete from study_users where user_id = p_user;
+  end if;
+  return true;
+end $$;
+grant execute on function public.admin_set_study(uuid, boolean) to authenticated;
+
+create table if not exists public.study_videos (
+  id uuid primary key default gen_random_uuid(),
+  tag text not null,
+  species text not null check (species in ('bovino', 'caballo')),
+  sex text not null check (sex in ('macho', 'hembra')),
+  part text not null check (part in ('cara', 'morro')),
+  path text not null,
+  size integer not null default 0,
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists study_videos_tag on public.study_videos (tag);
+alter table public.study_videos enable row level security;
+drop policy if exists "quien filma guarda el estudio" on public.study_videos;
+create policy "quien filma guarda el estudio" on public.study_videos for insert to authenticated
+  with check (user_id = auth.uid() and study_ok());
+drop policy if exists "admin ve el estudio" on public.study_videos;
+create policy "admin ve el estudio" on public.study_videos for select using (is_admin());
+drop policy if exists "admin borra del estudio" on public.study_videos;
+create policy "admin borra del estudio" on public.study_videos for delete using (is_admin());
+
+insert into storage.buckets (id, name, public, file_size_limit) values ('estudio-ganado', 'estudio-ganado', false, 52428800)
+  on conflict (id) do nothing;
+drop policy if exists "quien filma sube al estudio" on storage.objects;
+create policy "quien filma sube al estudio" on storage.objects for insert to authenticated with check (
+  bucket_id = 'estudio-ganado' and public.study_ok());
+drop policy if exists "admin ve videos del estudio" on storage.objects;
+create policy "admin ve videos del estudio" on storage.objects for select using (
+  bucket_id = 'estudio-ganado' and public.is_admin());
+drop policy if exists "admin borra videos del estudio" on storage.objects;
+create policy "admin borra videos del estudio" on storage.objects for delete using (
+  bucket_id = 'estudio-ganado' and public.is_admin());
