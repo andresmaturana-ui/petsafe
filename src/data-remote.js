@@ -627,3 +627,15 @@ export async function studyGuests() {
 
 export const studyNewGuest = () => run(sb().rpc('admin_new_study_guest'));
 export const studyDeleteGuest = (id) => run(sb().rpc('admin_delete_study_guest', { p_id: id }));
+
+/** Caballo nuevo: Kiltrazo le da su número de registro (C-0001, ...). */
+export async function studyNewHorse(name, sex) {
+  await liveSession();
+  return run(sb().rpc('study_new_horse', { p_name: name, p_sex: sex }));
+}
+
+/** Caballos ya registrados, para filmarlos el segundo día: [{ tag, name, sex }]. */
+export async function studyHorses() {
+  await liveSession();
+  return run(sb().rpc('study_horse_list'));
+}

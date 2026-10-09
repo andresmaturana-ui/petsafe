@@ -84,3 +84,5 @@ export const studyGuests = call('studyGuests');
 export const studyNewGuest = call('studyNewGuest');
 export const studyDeleteGuest = call('studyDeleteGuest');
 export const studyJoin = call('studyJoin');
+export const studyNewHorse = call('studyNewHorse');
+export const studyHorses = call('studyHorses');

@@ -5,7 +5,7 @@
 // autocrotal, y el administrador los descarga desde Admin → Estudio.
 // No usa el detector de cabezas (está entrenado con perros y gatos).
 
-import { studyAccess, studySave, studyJoin, isAdmin, CLOUD } from '../data.js';
+import { studyAccess, studySave, studyJoin, studyNewHorse, studyHorses, isAdmin, CLOUD } from '../data.js';
 import { esc, toast } from '../ui.js';
 import { SITE_URL } from '../config.js';
 
@@ -58,14 +58,15 @@ const howTo = `
     <summary><strong>¿Cómo se usa?</strong></summary>
     <details class="study-setup"><summary>Antes de empezar</summary>${setup}</details>
     <ol>
-      <li>Escribe el número del <strong>autocrotal</strong> del animal y marca si es bovino o caballo, y hembra o macho.</li>
+      <li>Marca si es bovino o caballo. Si es bovino, escribe su <strong>autocrotal</strong>. Si es un caballo nuevo, escribe su nombre y Kiltrazo le da un <strong>número de registro</strong>. El segundo día, elígelo en "Ya registrado".</li>
+      <li>Marca si es hembra o macho.</li>
       <li>Graba la <strong>cara</strong>: toca "Grabar", el video se corta solo a los 10 segundos.</li>
       <li>Graba el <strong>morro</strong> de cerca: se corta solo a los 5 segundos.</li>
       <li>Si un video salió mal, toca "Repetir". Si quedó bien, "Guardar". Se sube solo al servidor.</li>
       <li>Toca "Siguiente animal" y repite.</li>
     </ol>
     <p><strong>Consejos:</strong> filma con luz de día, sin contraluz, y con el animal tranquilo (en la manga o amarrado). Limpia el lente del celular.</p>
-    <p><strong>Importante:</strong> otro día, idealmente a otra hora, se filman de nuevo los <strong>mismos animales</strong> con su mismo autocrotal. Así se mide si Kiltrazo los reconoce.</p>
+    <p><strong>Importante:</strong> otro día, idealmente a otra hora, se filman de nuevo los <strong>mismos animales</strong> con su mismo autocrotal (o, si es caballo, eligiéndolo en "Ya registrado"). Así se mide si Kiltrazo los reconoce.</p>
     <p class="small muted">Se necesita internet para guardar. Cada video pesa unos pocos MB, así que conviene usar wifi si hay.</p>
     ${manual}
   </details>`;
@@ -75,6 +76,7 @@ export default async function studyPoint(el) {
   if (!admin && !(await studyAccess().catch(() => false))) return enter(el, () => studyPoint(el));
   const exit = admin ? '<a href="#/admin" class="btn small ghost">Volver a Admin</a>' : '';
   let animal = { tag: '', species: 'bovino', sex: 'hembra' };
+  const label = () => (animal.name ? `${animal.name} (${animal.tag})` : animal.tag);
   let stream = null;
   const stop = () => {
     stream?.getTracks().forEach((t) => t.stop());
@@ -93,31 +95,83 @@ export default async function studyPoint(el) {
     </ol>`;
   const head = `<div class="study-head"><h1>🐄 Punto de estudio</h1>${exit}</div>`;
 
-  function data() {
+  // Bovinos: se escribe su autocrotal. Caballos (no usan autocrotal): uno
+  // nuevo recibe un número de registro de Kiltrazo que no se repite ni se
+  // cambia; el segundo día se elige de la lista de caballos ya registrados.
+  async function data() {
     stop();
     const done = doneToday();
+    const horses = await studyHorses().catch(() => []);
+    const chips = (name, list, value) => list.map(([v, t]) => `<label class="spec-chip"><input type="radio" name="${name}" value="${v}" ${value === v ? 'checked' : ''}><span>${t}</span></label>`).join('');
     el.innerHTML = `
       ${head}
       ${howTo}
       ${steps(1)}
       <form class="card form" id="study-form">
-        <label>Número del autocrotal<input name="tag" required maxlength="30" autocomplete="off" inputmode="numeric" placeholder="Ej.: 0012345678" value="${esc(animal.tag)}"></label>
-        <p class="small muted">Es el número del arete (DIIO). Escríbelo igual los dos días. Si no tiene, usa su nombre o un número que no se repita.</p>
-        <div class="chips" role="radiogroup" aria-label="Especie">
-          ${SPECIES.map(([v, t]) => `<label class="spec-chip"><input type="radio" name="species" value="${v}" ${animal.species === v ? 'checked' : ''}><span>${t}</span></label>`).join('')}
+        <div class="chips" role="radiogroup" aria-label="Especie">${chips('species', SPECIES, animal.species)}</div>
+        <div data-for="bovino">
+          <label>Número del autocrotal<input name="tag" maxlength="30" autocomplete="off" inputmode="numeric" placeholder="Ej.: 0012345678" value="${esc(animal.species === 'bovino' ? animal.tag : '')}"></label>
+          <p class="small muted">Es el número del arete (DIIO). Escríbelo igual los dos días.</p>
         </div>
-        <div class="chips" role="radiogroup" aria-label="Sexo">
-          ${SEXES.map(([v, t]) => `<label class="spec-chip"><input type="radio" name="sex" value="${v}" ${animal.sex === v ? 'checked' : ''}><span>${t}</span></label>`).join('')}
+        <div data-for="caballo">
+          <div class="chips" role="radiogroup" aria-label="Caballo">${chips('horse', [['nuevo', 'Caballo nuevo'], ['registrado', 'Ya registrado']], horses.length && animal.horse === 'registrado' ? 'registrado' : 'nuevo')}</div>
+          <div data-horse="nuevo">
+            <label>Nombre del caballo<input name="horseName" maxlength="60" autocomplete="off" placeholder="Ej.: Pirata"></label>
+            <p class="small muted">Al seguir, Kiltrazo le da un <strong>número de registro</strong> que no se repite. Con su nombre lo encuentras el segundo día en "Ya registrado".</p>
+          </div>
+          <div data-horse="registrado">
+            ${horses.length ? `<label>Elige el caballo<select name="horseTag">${horses.map((h) => `<option value="${esc(h.tag)}" ${animal.tag === h.tag ? 'selected' : ''}>${esc(h.name)} · ${esc(h.tag)}</option>`).join('')}</select></label>`
+              : '<p class="muted">Aún no hay caballos registrados. Elige "Caballo nuevo".</p>'}
+          </div>
         </div>
+        <div class="chips" role="radiogroup" aria-label="Sexo" data-sexes>${chips('sex', SEXES, animal.sex)}</div>
         <button class="btn primary big">Filmar la cara</button>
       </form>
       ${done.length ? `<div class="card"><h2>Filmados hoy en este celular (${done.length})</h2><p class="study-done">${done.map(esc).join(' · ')}</p></div>` : ''}`;
-    el.querySelector('#study-form').addEventListener('submit', (e) => {
+    const form = el.querySelector('#study-form');
+    // Muestra solo lo que corresponde a la especie (y, en caballos, a nuevo o ya registrado).
+    const sync = () => {
+      const f = new FormData(form);
+      const horse = f.get('species') === 'caballo';
+      const known = horse && f.get('horse') === 'registrado';
+      form.querySelector('[data-for="bovino"]').hidden = horse;
+      form.querySelector('[data-for="caballo"]').hidden = !horse;
+      form.querySelector('[data-horse="nuevo"]').hidden = known;
+      form.querySelector('[data-horse="registrado"]').hidden = !known;
+      // El sexo de un caballo ya registrado viene de su registro.
+      form.querySelector('[data-sexes]').style.display = known && horses.length > 0 ? 'none' : '';
+    };
+    form.addEventListener('change', sync);
+    sync();
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const f = new FormData(e.target);
-      const tag = String(f.get('tag')).trim().replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-|-$/g, '');
-      if (!tag) return toast('Escribe el número del autocrotal', 'bad');
-      animal = { tag, species: f.get('species'), sex: f.get('sex') };
+      const f = new FormData(form);
+      const species = f.get('species');
+      let sex = f.get('sex');
+      let tag = '';
+      let name = '';
+      const b = form.querySelector('button.btn');
+      if (species === 'bovino') {
+        tag = String(f.get('tag')).trim().replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-|-$/g, '');
+        if (!tag) return toast('Escribe el número del autocrotal', 'bad');
+      } else if (f.get('horse') === 'registrado') {
+        const h = horses.find((x) => x.tag === f.get('horseTag'));
+        if (!h) return toast('Elige el caballo de la lista', 'bad');
+        ({ tag, name, sex } = h);
+      } else {
+        name = String(f.get('horseName')).trim();
+        if (!name) return toast('Escribe el nombre del caballo', 'bad');
+        b.disabled = true;
+        try {
+          tag = await studyNewHorse(name, sex);
+          toast(`${name} quedó registrado con el número ${tag}`, 'ok');
+        } catch (err) {
+          b.disabled = false;
+          return toast(err.message, 'bad');
+        }
+      }
+      // Si vuelve a "Cambiar los datos", el caballo ya registrado queda elegido.
+      animal = { tag, species, sex, name, horse: 'registrado', choice: f.get('horse') };
       if (doneToday().includes(tag)) toast(`El ${tag} ya se filmó hoy. Se guardará otra vez.`, 'ok');
       record('cara');
     });
@@ -130,7 +184,7 @@ export default async function studyPoint(el) {
       ${head}
       ${steps(part === 'cara' ? 2 : 3)}
       <div class="card">
-        <h2>${title} · ${esc(animal.tag)}</h2>
+        <h2>${title} · ${esc(label())}</h2>
         <p>${how}</p>
         <div class="study-cam"><video playsinline muted autoplay></video><span class="study-count" hidden></span></div>
         <p class="study-msg small muted"></p>
@@ -196,7 +250,7 @@ export default async function studyPoint(el) {
       ${head}
       ${steps(part === 'cara' ? 2 : 3)}
       <div class="card">
-        <h2>¿Quedó bien? · ${esc(animal.tag)}</h2>
+        <h2>¿Quedó bien? · ${esc(label())}</h2>
         <p class="small muted">Revisa que se vea ${part === 'cara' ? 'la cara completa' : 'el morro de cerca'}, nítido y con luz.</p>
         <div class="study-cam"><video src="${url}" playsinline controls autoplay muted loop></video></div>
         <div class="study-actions">
@@ -230,12 +284,12 @@ export default async function studyPoint(el) {
       ${head}
       <div class="card study-ok">
         <p class="study-big">✅</p>
-        <h2>${esc(animal.tag)} guardado</h2>
+        <h2>${esc(label())} guardado</h2>
         <p>${SPECIES.find(([v]) => v === animal.species)[1]} · ${SEXES.find(([v]) => v === animal.sex)[1]}</p>
         <button class="btn primary big" id="next">Siguiente animal</button>
       </div>`;
     el.querySelector('#next').addEventListener('click', () => {
-      animal = { ...animal, tag: '' };
+      animal = { species: animal.species, sex: animal.sex, horse: animal.choice, tag: '', name: '' };
       data();
     });
   }
@@ -255,7 +309,7 @@ function enter(el, done) {
     <details class="card study-how">
       <summary><strong>¿Cómo se usa?</strong></summary>
       <details class="study-setup"><summary>Antes de empezar</summary>${setup}</details>
-      <p>Después de entrar, por cada animal escribes su autocrotal, grabas su cara (10 segundos) y su morro (5 segundos). El manual tiene todos los pasos.</p>
+      <p>Después de entrar, por cada animal anotas su autocrotal (o, si es caballo, su nombre), grabas su cara (10 segundos) y su morro (5 segundos). El manual tiene todos los pasos.</p>
       ${manual}
     </details>`;
   el.querySelector('#study-code').addEventListener('submit', async (e) => {
