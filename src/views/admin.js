@@ -1,7 +1,7 @@
 import {
   allPets, savePet, allFound, saveFound, deleteFound, listUsers, listAccounts, moveUserPets, adminDeleteUser, adminDeletePet, notify, notifyAll,
   latestSuccesses, deleteSuccess, commentsFor, deleteComment, addSuccess, markRecovered,
-  trainingPhotos, tagStats, CLOUD, isAdmin, claimAdmin, adminExists, listContacts, markContactRead, deleteContact, pushConfigured, savePushKey, enablePush,
+  trainingPhotos, tagStats, studyList, studyFile, studyGuests, studyNewGuest, studyDeleteGuest, CLOUD, isAdmin, claimAdmin, adminExists, listContacts, markContactRead, deleteContact, pushConfigured, savePushKey, enablePush,
 } from '../data.js';
 import { generateVapidKeys } from '../notify.js';
 import { mountEmailLogin } from './login-email.js';
@@ -9,6 +9,7 @@ import { esc, timeAgo, toast, changed, go } from '../ui.js';
 import { SPECIES, describe } from '../breeds.js';
 import { zip, fromDataUrl } from '../zip.js';
 import { THRESHOLDS, SUGGEST_MARGIN } from '../biometrics.js';
+import { SITE_URL } from '../config.js';
 
 // PIN de prototipo. En producción el acceso de administrador debe
 // validarse en el servidor con un rol de usuario.
@@ -25,7 +26,7 @@ export default async function admin(el, _params, ctx) {
     <div class="admin-head">
       <h1>Administrador</h1>
       <div class="tabs">
-        ${[['alertas', '🚨 Alertas'], ['recon', '🎯 Reconocimiento'], ['mensajes', '📢 Mensajes'], ['usuarios', '👥 Usuarios'], ['clinicas', '🏥 Clínicas'], ['municipios', '🏛️ Municipalidades'], ['punto', '📷 Punto'], ['publicidad', '📣 Publicidad'], ['casos', '💛 Reencuentros'], ['datos', '📋 Datos']]
+        ${[['alertas', '🚨 Alertas'], ['recon', '🎯 Reconocimiento'], ['mensajes', '📢 Mensajes'], ['usuarios', '👥 Usuarios'], ['clinicas', '🏥 Clínicas'], ['municipios', '🏛️ Municipalidades'], ['punto', '📷 Punto'], ['estudio', '🐄 Estudio'], ['publicidad', '📣 Publicidad'], ['casos', '💛 Reencuentros'], ['datos', '📋 Datos']]
           .map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
       </div>
     </div>
@@ -40,7 +41,7 @@ export default async function admin(el, _params, ctx) {
   );
 
   const panel = el.querySelector('#panel');
-  await ({ alertas, recon, mensajes, usuarios, clinicas, municipios, punto, publicidad, casos, datos })[tab](panel, ctx);
+  await ({ alertas, recon, mensajes, usuarios, clinicas, municipios, punto, estudio, publicidad, casos, datos })[tab](panel, ctx);
 }
 
 // Con Supabase el permiso vive en el servidor: se entra con un correo de
@@ -627,6 +628,101 @@ async function punto(panel, { refresh }) {
     <li><span><strong>${esc(fullName(u))}</strong><small>${contact(u)}</small></span>
     <button type="button" class="btn small primary" data-on="${esc(u.id)}">Dar permiso</button></li>`, (list) => {
     list.querySelectorAll('[data-on]').forEach((b) => b.addEventListener('click', () => set(b.dataset.on, true, b)));
+  });
+}
+
+// Estudio de ganado: los invitados que filman (cada uno con su código, sin
+// cuenta), lo filmado y la descarga de todos los videos (una carpeta por
+// autocrotal) para medir el reconocimiento.
+async function estudio(panel, { refresh }) {
+  const [videos, guests] = await Promise.all([studyList().catch(() => null), studyGuests().catch(() => [])]);
+  if (!videos) {
+    panel.innerHTML = '<div class="card"><h2>🐄 Estudio de ganado</h2><p>Falta correr el SQL del estudio en Supabase (documentos/estudio-ganado-sql.txt).</p></div>';
+    return;
+  }
+  const link = `${SITE_URL}/#/estudio`;
+  const who = (v) => (v.guest ? `Invitado ${v.guest}` : 'Administrador');
+  // Un animal por autocrotal: cuántos videos de cara y morro, y en qué días.
+  const animals = new Map();
+  for (const v of videos) {
+    const a = animals.get(v.tag) || { tag: v.tag, species: v.species, sex: v.sex, cara: 0, morro: 0, days: new Set() };
+    a[v.part] += 1;
+    a.days.add(day(v.createdAt));
+    animals.set(v.tag, a);
+  }
+  const list = [...animals.values()];
+  const twice = list.filter((a) => a.days.size >= 2).length;
+  const mb = (videos.reduce((n, v) => n + (v.size || 0), 0) / 1048576).toFixed(0);
+  const wa = (g) => `https://wa.me/?text=${encodeURIComponent(`Hola, para filmar el estudio de Kiltrazo abre ${link} y escribe este código: ${g.code}`)}`;
+  panel.innerHTML = `
+    <div class="card">
+      <h2>🐄 Estudio de ganado</h2>
+      <p>Para probar si el reconocimiento facial sirve con vacas y caballos. Cada invitado filma la cara y el morro de cada animal, con su autocrotal y sexo. Hay que filmar los mismos animales dos días distintos.</p>
+      <a class="btn primary big" href="#/estudio">Abrir punto de estudio</a>
+    </div>
+    <div class="card">
+      <h2>Invitados (${guests.length})</h2>
+      <p class="small muted">Crea un invitado y mándale su código por WhatsApp. Entra en <strong>${esc(link)}</strong> con el código, sin crear cuenta. Solo puede subir videos: no ve lo filmado ni las mascotas.</p>
+      <ul class="user-list point-list">${guests.map((g) => `
+        <li><span><strong>Invitado ${g.n}</strong><small>Código <strong class="study-code">${esc(g.code)}</strong> · ${g.devices ? `${g.devices} ${g.devices === 1 ? 'celular' : 'celulares'}` : 'aún no entra'}</small></span>
+          <span class="study-guest-btns"><a class="btn small secondary" href="${esc(wa(g))}" target="_blank" rel="noopener">WhatsApp</a>
+          <button type="button" class="link danger small" data-del="${esc(g.id)}" data-n="${g.n}">Quitar</button></span></li>`).join('') || '<li><span class="muted">Nadie todavía.</span></li>'}
+      </ul>
+      <button class="btn primary" id="study-new">+ Crear invitado</button>
+    </div>
+    <div class="card">
+      <h2>Lo filmado</h2>
+      <p><strong>${list.length}</strong> ${list.length === 1 ? 'animal' : 'animales'} · <strong>${twice}</strong> filmados en dos días o más · ${videos.length} videos (${mb} MB)</p>
+      ${list.length ? `<div class="study-wrap"><table class="study-table">
+        <tr><th>Autocrotal</th><th>Especie</th><th>Sexo</th><th>Cara</th><th>Morro</th><th>Días</th></tr>
+        ${list.map((a) => `<tr><td>${esc(a.tag)}</td><td>${a.species === 'caballo' ? '🐴 Caballo' : '🐄 Bovino'}</td><td>${a.sex === 'macho' ? 'Macho' : 'Hembra'}</td><td>${a.cara}</td><td>${a.morro}</td><td>${a.days.size}</td></tr>`).join('')}
+      </table></div>
+      <button class="btn secondary" id="study-zip">⬇️ Descargar estudio (ZIP)</button>
+      <p class="small muted" id="study-zip-msg">Baja todos los videos, una carpeta por autocrotal, más una planilla con los datos. Ese ZIP es el que se le sube a Claude.</p>` : '<p class="muted">Aún no hay videos.</p>'}
+    </div>`;
+  panel.querySelector('#study-new').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try {
+      const g = await studyNewGuest();
+      toast(`Invitado ${g.n} creado: código ${g.code}`, 'ok');
+      refresh();
+    } catch (err) {
+      toast(err.message, 'bad');
+      b.disabled = false;
+    }
+  });
+  panel.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(`¿Quitar al Invitado ${b.dataset.n}? Su código deja de servir. Lo que ya filmó se mantiene.`)) return;
+    b.disabled = true;
+    try {
+      await studyDeleteGuest(b.dataset.del);
+      refresh();
+    } catch (err) {
+      toast(err.message, 'bad');
+      b.disabled = false;
+    }
+  }));
+  panel.querySelector('#study-zip')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    const msg = panel.querySelector('#study-zip-msg');
+    b.disabled = true;
+    try {
+      const files = [];
+      for (const [i, v] of videos.entries()) {
+        msg.textContent = `Bajando video ${i + 1} de ${videos.length}…`;
+        files.push({ name: `estudio-ganado/${v.path}`, data: await studyFile(v.path) });
+      }
+      const rows = [['autocrotal', 'especie', 'sexo', 'parte', 'fecha', 'archivo', 'filmó'],
+        ...[...videos].reverse().map((v) => [v.tag, v.species, v.sex, v.part, v.createdAt, v.path, who(v)])];
+      files.unshift({ name: 'estudio-ganado/datos.csv', data: new TextEncoder().encode(toCsv(rows)) });
+      download(`kiltrazo-estudio-ganado-${day(new Date().toISOString())}.zip`, zip(files));
+      msg.textContent = 'Listo. Revisa tus descargas.';
+    } catch (err) {
+      toast(`No se pudo descargar: ${err.message}`, 'bad');
+      msg.textContent = '';
+    }
+    b.disabled = false;
   });
 }
 

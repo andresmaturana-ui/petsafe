@@ -486,3 +486,40 @@ export async function tagStats() {
     months: [],
   };
 }
+
+// ---------- Estudio de ganado ----------
+// En modo local (pruebas) lo filmado queda en memoria hasta recargar.
+
+const study = { videos: [], guests: [], joined: new Map(), files: new Map() };
+
+export async function studyAccess() {
+  const me = await currentUser();
+  return sessionStorage.getItem('petsafe-admin') === 'ok' || study.joined.has(me?.id || 'anon');
+}
+
+export async function studySave({ tag, species, sex, part, blob, ext }) {
+  const me = await currentUser();
+  const guest = study.guests.find((g) => g.id === study.joined.get(me?.id || 'anon'))?.n ?? null;
+  const path = `${tag}/${now().replace(/[:.]/g, '-').slice(0, 19)}-${part}.${ext}`;
+  study.files.set(path, new Uint8Array(await blob.arrayBuffer()));
+  study.videos.unshift({ id: uid('sv_'), tag, species, sex, part, path, size: blob.size, guest, createdAt: now() });
+}
+
+export const studyList = async () => [...study.videos];
+export const studyFile = async (path) => study.files.get(path);
+export const studyGuests = async () => study.guests.map((g) => ({ ...g, devices: [...study.joined.values()].filter((v) => v === g.id).length }));
+export async function studyNewGuest() {
+  const g = { id: uid('sg_'), n: Math.max(0, ...study.guests.map((x) => x.n)) + 1, code: Math.random().toString(36).slice(2, 8).toUpperCase(), createdAt: now() };
+  study.guests.push(g);
+  return g;
+}
+export async function studyDeleteGuest(id) {
+  study.guests = study.guests.filter((g) => g.id !== id);
+}
+export async function studyJoin(code) {
+  const g = study.guests.find((x) => x.code === String(code).trim().toUpperCase());
+  if (!g) throw new Error('Ese código no existe. Revísalo o pídele uno nuevo al administrador.');
+  const me = await currentUser();
+  study.joined.set(me?.id || 'anon', g.id);
+  return g.n;
+}

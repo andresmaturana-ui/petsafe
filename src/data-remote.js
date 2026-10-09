@@ -521,3 +521,48 @@ export async function markContactRead(id) {
 export async function deleteContact(id) {
   return run(sb().from('contacts').delete().eq('id', id));
 }
+
+// ---------- Estudio de ganado (bucket privado "estudio-ganado") ----------
+// Videos de la cara y el morro de vacas y caballos para medir si el
+// reconocimiento facial sirve con ganado. Una carpeta por autocrotal.
+
+const STUDY = 'estudio-ganado';
+
+/** ¿Esta cuenta puede filmar el estudio? (permiso del administrador, o es él). */
+export async function studyAccess() {
+  const { data, error } = await sb().rpc('study_ok');
+  return !error && Boolean(data);
+}
+
+export async function studySave({ tag, species, sex, part, blob, ext }) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const path = `${tag}/${stamp}-${part}.${ext}`;
+  const { error } = await sb().storage.from(STUDY).upload(path, blob, { contentType: blob.type || 'video/mp4', upsert: false });
+  if (error) throw new Error(error.message);
+  await run(sb().from('study_videos').insert({ tag, species, sex, part, path, size: blob.size }));
+}
+
+/** Solo administrador: lo filmado, del más nuevo al más antiguo. */
+export async function studyList() {
+  return rows(await run(sb().from('study_videos').select('*').order('created_at', { ascending: false })));
+}
+
+export async function studyFile(path) {
+  const { data, error } = await sb().storage.from(STUDY).download(path);
+  if (error) throw new Error(error.message);
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+/** Solo administrador: los invitados (Invitado 1, 2, ...) y cuántos celulares entraron con cada código. */
+export async function studyGuests() {
+  const [guests, users] = await Promise.all([
+    run(sb().from('study_guests').select('*').order('n')),
+    run(sb().from('study_users').select('guest')),
+  ]);
+  return rows(guests).map((g) => ({ ...g, devices: users.filter((u) => u.guest === g.id).length }));
+}
+
+export const studyNewGuest = () => run(sb().rpc('admin_new_study_guest'));
+export const studyDeleteGuest = (id) => run(sb().rpc('admin_delete_study_guest', { p_id: id }));
+/** El invitado entra con su código. Devuelve su número. */
+export const studyJoin = (code) => run(sb().rpc('study_join', { p_code: code }));
