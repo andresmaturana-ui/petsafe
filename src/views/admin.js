@@ -1,7 +1,7 @@
 import {
   allPets, savePet, allFound, saveFound, deleteFound, listUsers, listAccounts, moveUserPets, adminDeleteUser, adminDeletePet, notify, notifyAll,
   latestSuccesses, deleteSuccess, commentsFor, deleteComment, addSuccess, markRecovered,
-  trainingPhotos, tagStats, studyList, studyFile, studyGuests, studyNewGuest, studyDeleteGuest, CLOUD, isAdmin, claimAdmin, adminExists, listContacts, markContactRead, deleteContact, pushConfigured, savePushKey, enablePush,
+  trainingPhotos, tagStats, studyList, studyFile, studyGuests, studyHorses, studyNewGuest, studyDeleteGuest, CLOUD, isAdmin, claimAdmin, adminExists, listContacts, markContactRead, deleteContact, pushConfigured, savePushKey, enablePush,
 } from '../data.js';
 import { generateVapidKeys } from '../notify.js';
 import { mountEmailLogin } from './login-email.js';
@@ -635,7 +635,8 @@ async function punto(panel, { refresh }) {
 // cuenta), lo filmado y la descarga de todos los videos (una carpeta por
 // autocrotal) para medir el reconocimiento.
 async function estudio(panel, { refresh }) {
-  const [videos, guests] = await Promise.all([studyList().catch(() => null), studyGuests().catch(() => [])]);
+  const [videos, guests, horses] = await Promise.all([studyList().catch(() => null), studyGuests().catch(() => []), studyHorses().catch(() => [])]);
+  const horseName = (tag) => horses.find((h) => h.tag === tag)?.name || '';
   if (!videos) {
     panel.innerHTML = '<div class="card"><h2>🐄 Estudio de ganado</h2><p>Falta correr el SQL del estudio en Supabase (documentos/estudio-ganado-sql.txt).</p></div>';
     return;
@@ -683,8 +684,8 @@ No necesitas crear cuenta ni instalar nada. En "¿Cómo se usa?" está el manual
       <h2>Lo filmado</h2>
       <p><strong>${list.length}</strong> ${list.length === 1 ? 'animal' : 'animales'} · <strong>${twice}</strong> filmados en dos días o más · ${videos.length} videos (${mb} MB)</p>
       ${list.length ? `<div class="study-wrap"><table class="study-table">
-        <tr><th>Autocrotal</th><th>Especie</th><th>Sexo</th><th>Cara</th><th>Morro</th><th>Días</th></tr>
-        ${list.map((a) => `<tr><td>${esc(a.tag)}</td><td>${a.species === 'caballo' ? '🐴 Caballo' : '🐄 Bovino'}</td><td>${a.sex === 'macho' ? 'Macho' : 'Hembra'}</td><td>${a.cara}</td><td>${a.morro}</td><td>${a.days.size}</td></tr>`).join('')}
+        <tr><th>Autocrotal o registro</th><th>Especie</th><th>Sexo</th><th>Cara</th><th>Morro</th><th>Días</th></tr>
+        ${list.map((a) => `<tr><td>${esc(a.tag)}${horseName(a.tag) ? ` · ${esc(horseName(a.tag))}` : ''}</td><td>${a.species === 'caballo' ? '🐴 Caballo' : '🐄 Bovino'}</td><td>${a.sex === 'macho' ? 'Macho' : 'Hembra'}</td><td>${a.cara}</td><td>${a.morro}</td><td>${a.days.size}</td></tr>`).join('')}
       </table></div>
       <button class="btn secondary" id="study-zip">⬇️ Descargar estudio (ZIP)</button>
       <p class="small muted" id="study-zip-msg">Baja todos los videos, una carpeta por autocrotal, más una planilla con los datos. Ese ZIP es el que se le sube a Claude.</p>` : '<p class="muted">Aún no hay videos.</p>'}
@@ -722,8 +723,8 @@ No necesitas crear cuenta ni instalar nada. En "¿Cómo se usa?" está el manual
         msg.textContent = `Bajando video ${i + 1} de ${videos.length}…`;
         files.push({ name: `estudio-ganado/${v.path}`, data: await studyFile(v.path) });
       }
-      const rows = [['autocrotal', 'especie', 'sexo', 'parte', 'fecha', 'archivo', 'filmó'],
-        ...[...videos].reverse().map((v) => [v.tag, v.species, v.sex, v.part, v.createdAt, v.path, who(v)])];
+      const rows = [['autocrotal o registro', 'nombre', 'especie', 'sexo', 'parte', 'fecha', 'archivo', 'filmó'],
+        ...[...videos].reverse().map((v) => [v.tag, horseName(v.tag), v.species, v.sex, v.part, v.createdAt, v.path, who(v)])];
       files.unshift({ name: 'estudio-ganado/datos.csv', data: new TextEncoder().encode(toCsv(rows)) });
       download(`kiltrazo-estudio-ganado-${day(new Date().toISOString())}.zip`, zip(files));
       msg.textContent = 'Listo. Revisa tus descargas.';

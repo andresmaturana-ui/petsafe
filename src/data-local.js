@@ -490,7 +490,7 @@ export async function tagStats() {
 // ---------- Estudio de ganado ----------
 // En modo local (pruebas) lo filmado queda en memoria hasta recargar.
 
-const study = { videos: [], guests: [], joined: new Map(), files: new Map() };
+const study = { videos: [], guests: [], joined: new Map(), files: new Map(), horses: [] };
 
 export async function studyAccess() {
   const me = await currentUser();
@@ -523,3 +523,11 @@ export async function studyJoin(code) {
   study.joined.set(me?.id || 'anon', g.id);
   return g.n;
 }
+
+export async function studyNewHorse(name, sex) {
+  if (!String(name).trim()) throw new Error('Falta el nombre del caballo');
+  const tag = `C-${String(study.horses.length + 1).padStart(4, '0')}`;
+  study.horses.push({ tag, name: String(name).trim(), sex });
+  return tag;
+}
+export const studyHorses = async () => [...study.horses];

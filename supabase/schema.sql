@@ -3127,3 +3127,39 @@ create policy "admin ve videos del estudio" on storage.objects for select using 
 drop policy if exists "admin borra videos del estudio" on storage.objects;
 create policy "admin borra videos del estudio" on storage.objects for delete using (
   bucket_id = 'estudio-ganado' and public.is_admin());
+
+-- Los caballos no tienen autocrotal: Kiltrazo les da un número de registro
+-- (C-0001, C-0002, ...) que no se repite ni se puede cambiar. Se guarda su
+-- nombre para reconocerlos el segundo día, cuando se eligen de la lista.
+create sequence if not exists public.study_horse_seq;
+create table if not exists public.study_horses (
+  tag text primary key,
+  name text not null,
+  sex text not null check (sex in ('macho', 'hembra')),
+  user_id uuid default auth.uid() references auth.users on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.study_horses enable row level security;
+drop policy if exists "admin ve los caballos del estudio" on public.study_horses;
+create policy "admin ve los caballos del estudio" on public.study_horses for select using (is_admin());
+
+create or replace function public.study_new_horse(p_name text, p_sex text) returns text
+language plpgsql security definer set search_path = public as $$
+declare t text;
+begin
+  if not study_ok() then raise exception 'Sin permiso para el estudio'; end if;
+  if coalesce(trim(p_name), '') = '' then raise exception 'Falta el nombre del caballo'; end if;
+  loop
+    t := 'C-' || lpad(nextval('study_horse_seq')::text, 4, '0');
+    exit when not exists (select 1 from study_horses where tag = t);
+  end loop;
+  insert into study_horses (tag, name, sex) values (t, left(trim(p_name), 60), p_sex);
+  return t;
+end $$;
+grant execute on function public.study_new_horse(text, text) to authenticated;
+
+create or replace function public.study_horse_list() returns table (tag text, name text, sex text)
+language sql stable security definer set search_path = public as $$
+  select h.tag, h.name, h.sex from study_horses h where study_ok() order by h.tag;
+$$;
+grant execute on function public.study_horse_list() to authenticated;
