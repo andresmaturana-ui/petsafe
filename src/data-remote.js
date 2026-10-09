@@ -528,18 +528,81 @@ export async function deleteContact(id) {
 
 const STUDY = 'estudio-ganado';
 
-/** ¿Esta cuenta puede filmar el estudio? (permiso del administrador, o es él). */
-export async function studyAccess() {
-  const { data, error } = await sb().rpc('study_ok');
-  return !error && Boolean(data);
+// Los invitados entran sin cuenta, con una sesión anónima. Si esa sesión se
+// perdió (por ejemplo, la página quedó abierta mucho rato en el navegador de
+// WhatsApp y no se pudo renovar), se crea otra y se vuelve a entrar con el
+// código guardado en este celular.
+const STUDY_CODE = 'kiltrazo-estudio-codigo';
+
+async function liveSession() {
+  const { data } = await sb().auth.getSession();
+  if (data.session) return data.session.user;
+  sessionPromise = null;
+  return session();
 }
 
-export async function studySave({ tag, species, sex, part, blob, ext }) {
+async function studyRejoin() {
+  let code = '';
+  try { code = localStorage.getItem(STUDY_CODE) || ''; } catch { /* sin almacenamiento */ }
+  if (!code) return false;
+  await liveSession();
+  const { error } = await sb().rpc('study_join', { p_code: code });
+  return !error;
+}
+
+/** ¿Este celular puede filmar el estudio? (entró con un código, o es el administrador). */
+export async function studyAccess() {
+  await liveSession();
+  const { data, error } = await sb().rpc('study_ok');
+  if (!error && data) return true;
+  return studyRejoin();
+}
+
+/** El invitado entra con su código. Devuelve su número (Invitado N). */
+export async function studyJoin(code) {
+  await liveSession();
+  let res = await sb().rpc('study_join', { p_code: code });
+  // Sin sesión en el servidor: se crea una nueva y se intenta una vez más.
+  // Sin sesión en el servidor: se renueva y se intenta otra vez. Si aun así no
+  // hay sesión, y este celular no tiene perfil (nada que perder), se crea una nueva.
+  const noSession = () => res.error && /sesi[oó]n|JWT/i.test(res.error.message);
+  if (noSession()) {
+    await sb().auth.refreshSession().catch(() => {});
+    res = await sb().rpc('study_join', { p_code: code });
+  }
+  if (noSession()) {
+    const { data } = await sb().auth.getSession();
+    const id = data.session?.user?.id;
+    const profile = id ? (await sb().from('profiles').select('id').eq('id', id).maybeSingle()).data : null;
+    if (!profile) {
+      await sb().auth.signOut({ scope: 'local' }).catch(() => {});
+      sessionPromise = null;
+      await session();
+      res = await sb().rpc('study_join', { p_code: code });
+    }
+  }
+  if (res.error) throw new Error(res.error.message);
+  try { localStorage.setItem(STUDY_CODE, String(code).trim().toUpperCase()); } catch { /* sin almacenamiento */ }
+  return res.data;
+}
+
+async function studyUpload({ tag, species, sex, part, blob, ext }) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const path = `${tag}/${stamp}-${part}.${ext}`;
   const { error } = await sb().storage.from(STUDY).upload(path, blob, { contentType: blob.type || 'video/mp4', upsert: false });
   if (error) throw new Error(error.message);
   await run(sb().from('study_videos').insert({ tag, species, sex, part, path, size: blob.size }));
+}
+
+export async function studySave(video) {
+  await liveSession();
+  try {
+    await studyUpload(video);
+  } catch (err) {
+    // Si cambió la sesión, se vuelve a entrar con el código y se reintenta.
+    if (!(await studyRejoin())) throw err;
+    await studyUpload(video);
+  }
 }
 
 /** Solo administrador: lo filmado, del más nuevo al más antiguo. */
@@ -564,5 +627,3 @@ export async function studyGuests() {
 
 export const studyNewGuest = () => run(sb().rpc('admin_new_study_guest'));
 export const studyDeleteGuest = (id) => run(sb().rpc('admin_delete_study_guest', { p_id: id }));
-/** El invitado entra con su código. Devuelve su número. */
-export const studyJoin = (code) => run(sb().rpc('study_join', { p_code: code }));
