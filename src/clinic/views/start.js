@@ -123,9 +123,10 @@ export default function start(el, { session, refresh, pendingCode, muni = false 
             <div data-spec-wrap>${specPick([], 'Tus especialidades')}<p class="small muted">Los tutores podrán buscarte por ellas. Las de tu equipo se agregan después en Equipo.</p></div>
             <label class="ck-check"><input type="checkbox" name="onMap" checked> Aparecer en “Clínicas cercanas” de la app, para que los tutores te encuentren</label>
             <div class="ck-map-pick" id="ck-map-pick">
-              <p class="small muted"><span data-k="clinica">Marca la clínica en el mapa (toca o arrastra la huella).</span><span data-k="domicilio" hidden>Marca el centro de la zona donde atiendes. En la app se verá un punto aproximado, nunca tu dirección.</span> Aparecerá cuando Kiltrazo lo apruebe.</p>
+              <p class="small muted"><span data-k="clinica">Marca la clínica en el mapa (toca o arrastra la huella). Si no hay calles claras, usa la vista Satélite.</span><span data-k="domicilio" hidden>Marca el centro de la zona donde atiendes. En la app se verá un punto aproximado, nunca tu dirección.</span> Aparecerá cuando Kiltrazo lo apruebe.</p>
               <div class="ck-map" id="ck-map"></div>
               <button type="button" class="link small" id="ck-here">📍 <span data-k="clinica">Estoy en la clínica: usar</span><span data-k="domicilio" hidden>Usar</span> mi ubicación</button>
+              <label class="ck-coords small">¿Tienes la ubicación en Google Maps? Pega aquí el enlace o las coordenadas<input id="ck-coords" placeholder="-36.6061, -72.1034"></label>
             </div>
             <label class="ck-check" data-k="clinica"><input type="checkbox" name="emergencies"> Atendemos urgencias</label>
             ${reviewFields()}
@@ -154,7 +155,7 @@ export default function start(el, { session, refresh, pendingCode, muni = false 
       pick.hidden = !onMap.checked;
       if (onMap.checked) picker.map.invalidateSize();
     });
-    bindPlaceSearch(picker, { input: create.address, hereBtn: el.querySelector('#ck-here'), getLocation, say: toast });
+    bindPlaceSearch(picker, { input: create.address, hereBtn: el.querySelector('#ck-here'), coordsInput: el.querySelector('#ck-coords'), getLocation, say: toast });
   });
 
   submit('#ck-create', async (d) => {
