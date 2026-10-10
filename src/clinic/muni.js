@@ -31,6 +31,7 @@ const mapField = (c = {}) => `
     <p class="small muted">Marca el centro de la comuna (toca o arrastra la huella). Lo usamos para mostrarte los animales perdidos y encontrados cerca.</p>
     <div class="ck-map" id="ck-map"></div>
     <button type="button" class="link small" id="ck-here">📍 Usar mi ubicación</button>
+    <label class="ck-coords small">¿Tienes la ubicación en Google Maps? Pega aquí el enlace o las coordenadas<input id="ck-coords" placeholder="-36.6061, -72.1034"></label>
   </div>
   <label>Mostrar perdidos y encontrados a menos de<select name="areaKm">
     ${AREAS.map((n) => `<option value="${n}" ${Number(c.areaKm ?? 5) === n ? 'selected' : ''}>${n} km del centro</option>`).join('')}
@@ -61,12 +62,11 @@ export const muniDataForm = (c) => `
 export function bindMuniForm(form, c = {}) {
   let point = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : null;
   const logo = bindLogo(form);
-  import('../map.js').then(({ pickPoint }) => {
+  import('../map.js').then(({ pickPoint, bindPlaceSearch }) => {
     const picker = pickPoint(form.querySelector('#ck-map'), point, (p) => { point = p; });
-    form.querySelector('#ck-here').addEventListener('click', async () => {
-      const loc = await getLocation();
-      loc ? picker.set(loc) : toast('No pudimos obtener tu ubicación', 'bad');
-    });
+    const query = () => [form.address.value, form.comuna.value].filter((x) => x.trim()).join(', ');
+    bindPlaceSearch(picker, { input: form.address, query, hereBtn: form.querySelector('#ck-here'), coordsInput: form.querySelector('#ck-coords'), getLocation, say: toast });
+    form.comuna.addEventListener('change', () => form.address.dispatchEvent(new Event('change')));
   });
   return () => {
     const f = Object.fromEntries(new FormData(form));

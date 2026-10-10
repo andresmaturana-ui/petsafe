@@ -62,9 +62,10 @@ export default function team(el, _params, ctx) {
             <label class="ck-check" data-k="clinica"><input type="checkbox" name="emergencies" ${clinic.emergencies ? 'checked' : ''}> Atendemos urgencias</label>
             <label class="ck-check"><input type="checkbox" name="onMap" ${clinic.onMap ? 'checked' : ''}> Aparecer en el mapa de clínicas de Kiltrazo (los tutores ven nombre, dirección o zona, teléfono y horario)</label>
             <div class="ck-map-pick">
-              <p class="small muted"><span data-k="clinica">Marca la clínica en el mapa (toca o arrastra la huella).</span><span data-k="domicilio" hidden>Marca el centro de la zona donde atiendes. En la app se verá un punto aproximado, nunca tu dirección.</span></p>
+              <p class="small muted"><span data-k="clinica">Marca la clínica en el mapa (toca o arrastra la huella). Si no hay calles claras, usa la vista Satélite.</span><span data-k="domicilio" hidden>Marca el centro de la zona donde atiendes. En la app se verá un punto aproximado, nunca tu dirección.</span></p>
               <div class="ck-map" id="ck-map"></div>
               <button type="button" class="link small" id="ck-here">📍 <span data-k="clinica">Estoy en la clínica: usar</span><span data-k="domicilio" hidden>Usar</span> mi ubicación</button>
+              <label class="ck-coords small">¿Tienes la ubicación en Google Maps? Pega aquí el enlace o las coordenadas<input id="ck-coords" placeholder="-36.6061, -72.1034"></label>
             </div>
             <button class="btn primary small">Guardar</button>
           </form>`}` : `<div class="card"><p>Solo quien administra ${where} puede invitar o quitar personas.</p></div>`}
@@ -152,12 +153,9 @@ export default function team(el, _params, ctx) {
   let point = clinic.lat != null && clinic.lng != null ? { lat: clinic.lat, lng: clinic.lng } : null;
   const mapEl = el.querySelector('#ck-map');
   if (mapEl) {
-    import('../../map.js').then(({ pickPoint }) => {
+    import('../../map.js').then(({ pickPoint, bindPlaceSearch }) => {
       const picker = pickPoint(mapEl, point, (p) => { point = p; });
-      el.querySelector('#ck-here').addEventListener('click', async () => {
-        const loc = await getLocation();
-        loc ? picker.set(loc) : toast('No pudimos obtener tu ubicación', 'bad');
-      });
+      bindPlaceSearch(picker, { input: el.querySelector('#ck-clinic [name="address"]'), hereBtn: el.querySelector('#ck-here'), coordsInput: el.querySelector('#ck-coords'), getLocation, say: toast });
     });
   }
 

@@ -40,6 +40,13 @@ export function showArea(el, { lat, lng }) {
 export function pickPoint(el, initial, onChange) {
   const start = initial ? [initial.lat, initial.lng] : DEFAULT_CENTER;
   const map = base(el, start, initial ? 16 : 12);
+  // Vista satélite: en el campo, sin calles con nombre, se reconoce el lugar.
+  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Imágenes &copy; Esri',
+  });
+  let street;
+  map.eachLayer((l) => { street = l; });
+  L.control.layers({ Mapa: street, 'Satélite': satellite }, null, { position: 'topright', collapsed: false }).addTo(map);
   const marker = L.marker(start, { icon: pawIcon, draggable: true }).addTo(map);
   const emit = () => {
     const p = marker.getLatLng();
@@ -52,6 +59,58 @@ export function pickPoint(el, initial, onChange) {
   marker.on('dragend', emit);
   if (initial) emit();
   return { map, set: (p) => { marker.setLatLng([p.lat, p.lng]); map.setView([p.lat, p.lng], 16); emit(); } };
+}
+
+/** Coordenadas escritas o pegadas desde Google Maps ("-36.6, -72.1" o un enlace con @lat,lng). */
+export function parseCoords(q) {
+  const m = String(q || '').match(/(?:@|q=|ll=|query=|!3d)?(-?\d{1,2}\.\d+)(?:,\s*|!4d)(-?\d{1,3}\.\d+)/);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+}
+
+/** Busca una dirección en Chile (OpenStreetMap). Devuelve { lat, lng } o null. */
+export async function findAddress(q) {
+  if (!q || q.trim().length < 4) return null;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=cl&accept-language=es&q=${encodeURIComponent(q.trim())}`;
+  try {
+    const [r] = await (await fetch(url)).json();
+    return r ? { lat: Number(r.lat), lng: Number(r.lon) } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * El mapa sigue a la dirección escrita, y "usar mi ubicación" avisa si el
+ * equipo da una ubicación aproximada (los computadores la calculan por
+ * internet y suelen marcar el centro de Santiago).
+ * query(): texto a buscar (dirección y comuna). say(msg, tone): avisos.
+ */
+export function bindPlaceSearch(picker, { input, query = () => input.value, hereBtn, coordsInput, getLocation, say }) {
+  coordsInput?.addEventListener('input', () => {
+    const p = parseCoords(coordsInput.value);
+    if (p) {
+      picker.set(p);
+      say('Listo, la huella quedó en esa ubicación.', 'ok');
+    }
+  });
+  input?.addEventListener('change', async () => {
+    const p = await findAddress(query());
+    if (p) {
+      picker.set(p);
+      say('Movimos la huella a la dirección. Revisa que quede justo en el lugar; si no, tócalo en el mapa.', 'ok');
+    } else if (input.value.trim()) {
+      say('No encontramos esa dirección en el mapa. Toca el mapa para marcar el lugar.', 'bad');
+    }
+  });
+  hereBtn?.addEventListener('click', async () => {
+    const loc = await getLocation();
+    if (!loc) return say('No pudimos obtener tu ubicación. Activa la ubicación para el navegador, o escribe la dirección o toca el mapa.', 'bad');
+    picker.set(loc);
+    if (loc.accuracy > 1000) say('Este equipo da una ubicación aproximada y puede estar lejos. Escribe la dirección o toca el mapa en el lugar correcto.', 'bad');
+  });
 }
 
 export const TRAVEL_MODES = [
