@@ -486,7 +486,7 @@ export async function transferInfo(code) {
   const cp = t && await get('clinic_patients', t.patientId);
   if (!cp || cp.petId) return null;
   const c = await get('clinics', t.clinicId);
-  return { clinic: c?.name, kind: c?.kind || 'clinica', name: cp.name, species: cp.species, breed: cp.breed, photo: cp.photo, hasScan: Boolean(cp.scan) };
+  return { clinic: c?.name, kind: c?.kind || 'clinica', name: cp.name, species: cp.species, breed: cp.breed, photo: cp.photo, hasScan: Boolean(cp.scan), hasTrain: Boolean(cp.trainCrops) };
 }
 
 export async function acceptTransfer(code) {
@@ -502,6 +502,13 @@ export async function acceptTransfer(code) {
   });
   await claimTransfer(code, pet.id);
   return pet.id;
+}
+
+export async function keepTrainCrops(petId, keep) {
+  const cp = (await list('clinic_patients')).find((r) => r.petId === petId && r.trainCrops);
+  if (!cp) return;
+  await update('clinic_patients', cp.id, { trainCrops: null });
+  if (keep) await app.saveTrainingPhotos(petId, cp.trainCrops);
 }
 
 export async function claimTransfer(code, petId) {

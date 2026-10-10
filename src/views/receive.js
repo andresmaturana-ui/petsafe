@@ -11,7 +11,7 @@ export const TRANSFER_KEY = 'kiltrazo-transfer';
 
 export default async function receive(el, { code }, { user }) {
   forget();
-  const { transferInfo, claimTransfer, acceptTransfer } = await import('../clinic/data.js');
+  const { transferInfo, claimTransfer, acceptTransfer, keepTrainCrops } = await import('../clinic/data.js');
   const [info, pets] = await Promise.all([transferInfo(code).catch(() => null), myPets(user)]);
   if (!info) {
     forget();
@@ -27,6 +27,13 @@ export default async function receive(el, { code }, { user }) {
     const box = el.querySelector('[name="promos"]');
     if (box?.checked) await saveUser({ ...user, promos: true, promosVersion: PROMOS_VERSION }).catch((err) => console.warn('Ofertas', err));
   };
+  // Fotos de la cara filmadas en el punto: solo se guardan para entrenar si
+  // el dueño marca la casilla (desmarcada); si no, se borran.
+  const saveTrain = async (petId) => {
+    if (!info.hasTrain) return;
+    const keep = Boolean(el.querySelector('[name="train"]')?.checked);
+    await keepTrainCrops(petId, keep).catch((err) => console.warn('Fotos de entrenamiento', err));
+  };
 
   el.innerHTML = `
     <div class="card receive">
@@ -39,6 +46,11 @@ export default async function receive(el, { code }, { user }) {
         ? 'Al agregarla a tu Kiltrazo verás sus vacunas y te avisaremos antes de cada dosis. Si algún día se pierde, cualquier vecino la reconoce por su cara.'
         : `Al agregarla a tu Kiltrazo verás sus vacunas, te avisaremos antes de cada dosis y podrás pedir hora con ${esc(info.clinic)}.`}</p>
       ${askPromos ? `<div class="receive-promos">${promosBox()}<p class="small muted">Esta casilla es de Kiltrazo, no de ${esc(info.clinic)}.</p></div>` : ''}
+      ${info.hasTrain ? `
+        <label class="consent receive-train">
+          <input type="checkbox" name="train">
+          <span><strong>Ayúdanos a mejorar el reconocimiento de mascotas.</strong> Permito que Kiltrazo guarde las fotos de la cara que se filmaron solo para entrenar el reconocimiento, para que encuentre mejor a las mascotas perdidas. Solo las ve el administrador, no se publican y se borran si elimino a mi mascota. Es opcional.</span>
+        </label>` : ''}
       <button class="btn primary big" data-new>Agregar a ${esc(info.name)}</button>
       <p class="small muted">${info.hasScan ? `${esc(info.clinic)} ya filmó su cara: si algún día se pierde, Kiltrazo podrá reconocerla.` : 'Te pediremos filmar su cara, para encontrarla si algún día se pierde.'}</p>
     </div>
@@ -56,7 +68,7 @@ export default async function receive(el, { code }, { user }) {
     if (info.hasScan) {
       e.target.disabled = true;
       try {
-        await acceptTransfer(code);
+        await saveTrain(await acceptTransfer(code));
         toast(`¡${info.name} ya está en tu Kiltrazo! 🎉`, 'ok');
         return go('#/perfil');
       } catch (err) {
@@ -75,6 +87,7 @@ export default async function receive(el, { code }, { user }) {
     try {
       await savePromos();
       await claimTransfer(code, pet.id);
+      await saveTrain(pet.id);
       forget();
       toast(`¡Listo! ${pet.name} ya está unida a ${info.clinic} 🎉`, 'ok');
       go('#/perfil');

@@ -217,7 +217,7 @@ export async function registerPet(_owner, { name, species = '', breed = '', owne
 
 const TRAIN = 'entrenamiento';
 
-async function saveTrainingPhotos(petId, { face = [], nose = [] }) {
+export async function saveTrainingPhotos(petId, { face = [], nose = [] }) {
   await run(sb().from('pets').update({ train_ok: true, train_at: new Date().toISOString() }).eq('id', petId));
   const files = [...face.map((p, i) => [`cara-${i + 1}.jpg`, p]), ...nose.map((p, i) => [`nariz-${i + 1}.jpg`, p])];
   let saved = 0;
