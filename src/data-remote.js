@@ -29,16 +29,21 @@ async function run(query) {
 // nombre y teléfono.
 
 let sessionPromise;
-function session() {
+// Se revisa la sesión guardada cada vez: Supabase la borra si no pudo
+// renovarla (celular que estuvo dormido, otra pestaña la renovó…). Antes se
+// recordaba la primera y, al crear la cuenta, salía "Auth session missing!".
+async function session() {
+  const { data } = await sb().auth.getSession();
+  if (data.session) return data.session.user;
+  // Sin sesión: se crea una anónima (una sola, aunque la pidan varias pantallas a la vez).
   sessionPromise ??= (async () => {
-    const { data } = await sb().auth.getSession();
-    if (data.session) return data.session.user;
-    const res = await sb().auth.signInAnonymously();
-    if (res.error) {
+    try {
+      const res = await sb().auth.signInAnonymously();
+      if (res.error) throw new Error('No se pudo conectar con el servidor: ' + res.error.message);
+      return res.data.user;
+    } finally {
       sessionPromise = null;
-      throw new Error('No se pudo conectar con el servidor: ' + res.error.message);
     }
-    return res.data.user;
   })();
   return sessionPromise;
 }
@@ -74,6 +79,7 @@ function friendly(error) {
   if (/already|registered|exists/i.test(m)) return 'Ya existe una cuenta con ese correo. Entra con tu clave o usa "Olvidé mi contraseña".';
   if (/rate limit|security purposes/i.test(m)) return 'Se enviaron demasiados correos. Espera un rato e inténtalo de nuevo.';
   if (/password/i.test(m) && /least|short|weak/i.test(m)) return 'La clave debe tener al menos 6 caracteres.';
+  if (/session missing/i.test(m)) return 'Se cortó la conexión con el servidor. Toca el botón otra vez.';
   return m;
 }
 
@@ -83,13 +89,16 @@ function friendly(error) {
  * Supabase pide confirmar el correo primero ("Confirm email" activado).
  */
 export async function createAccount(email, password) {
-  const auth = await session();
-  const change = auth.email === email ? { password } : { email, password };
-  const { data, error } = await sb().auth.updateUser(change, { emailRedirectTo: back() });
+  const change = async () => {
+    const auth = await session();
+    return sb().auth.updateUser(auth.email === email ? { password } : { email, password }, { emailRedirectTo: back() });
+  };
+  let { data, error } = await change();
+  // Si la sesión se perdió justo entremedio, se crea otra y se intenta una vez más.
+  if (error && /session missing/i.test(error.message)) ({ data, error } = await change());
   if (error) throw new Error(friendly(error));
   if (data.user?.email !== email) return false;
   await sb().auth.refreshSession();
-  sessionPromise = Promise.resolve(data.user);
   return true;
 }
 
@@ -100,7 +109,6 @@ export async function signIn(email, password) {
   const pass = before?.is_anonymous ? (await sb().rpc('start_transfer')).data : null;
   const { data, error } = await sb().auth.signInWithPassword({ email, password });
   if (error) throw new Error(friendly(error));
-  sessionPromise = Promise.resolve(data.user);
   watching = null;
   if (pass) {
     const { error: e } = await sb().rpc('finish_transfer', { p_token: pass });
@@ -534,12 +542,7 @@ const STUDY = 'estudio-ganado';
 // código guardado en este celular.
 const STUDY_CODE = 'kiltrazo-estudio-codigo';
 
-async function liveSession() {
-  const { data } = await sb().auth.getSession();
-  if (data.session) return data.session.user;
-  sessionPromise = null;
-  return session();
-}
+const liveSession = session;
 
 async function studyRejoin() {
   let code = '';
