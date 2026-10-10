@@ -1,24 +1,29 @@
-// Ficha de un paciente: consulta nueva, historial, vacunas, exámenes y
-// curvas de peso y signos vitales.
+// Ficha de un paciente: consulta nueva, historial, vacunas, exámenes,
+// documentos (consentimientos, recetas y certificados) y curvas de peso y
+// signos vitales.
 
 import { esc, toast, go } from '../../ui.js';
 import { createTransferCode } from '../data.js';
 import {
   getPatient, savePatient, listVisits, saveVisit, listVaccines, saveVaccine, deleteVaccine, currentDoses, listFiles, uploadFile,
-  deleteFile, fileUrls, listAppointments, saveAppointment, today, localDay, isMuni,
+  deleteFile, fileUrls, listAppointments, saveAppointment, today, localDay, isMuni, listDocuments, createDocument, voidDocument,
 } from '../data.js';
 import { avatar, speciesLine, sexLine, age, fmtDate, num, dueTone, dueLabel, waLink, lineChart, KINDS, statusTag } from '../ui.js';
 import { TEMPLATES, VACCINE_NAMES, NEXT_MONTHS } from '../templates.js';
 import { rnmCard, bindRnm } from '../rnm.js';
+import { DOC_KINDS, fillBody } from '../doc-templates.js';
+import { signaturePad } from '../../signature.js';
 
-const TABS = { consulta: 'Consulta', historial: 'Historial', vacunas: 'Vacunas', examenes: 'Exámenes', signos: 'Peso y signos' };
+const TABS = { consulta: 'Consulta', historial: 'Historial', vacunas: 'Vacunas', examenes: 'Exámenes', documentos: 'Documentos', signos: 'Peso y signos' };
 
 let poll = null;
 
 export default async function patient(el, { id, tab }, ctx) {
   clearInterval(poll);
   const isVet = ctx.me.role === 'vet';
-  tab = TABS[tab] ? tab : isVet ? 'consulta' : 'historial';
+  const muni = isMuni(ctx.clinic);
+  const tabs = muni ? Object.fromEntries(Object.entries(TABS).filter(([k]) => k !== 'documentos')) : TABS;
+  tab = tabs[tab] ? tab : isVet ? 'consulta' : 'historial';
   const [p, visits, vaccines, files] = await Promise.all([getPatient(id), listVisits(id), listVaccines(id), listFiles(id)]);
   if (!p) {
     el.innerHTML = '<div class="card"><p>No encontramos este paciente.</p><a class="btn primary" href="#/clinica/pacientes">Ver pacientes</a></div>';
@@ -29,7 +34,6 @@ export default async function patient(el, { id, tab }, ctx) {
   const nextDose = doses[0];
   const lastWeight = visits.find((v) => v.weight != null);
   const wa = waLink(p.tutorPhone);
-  const muni = isMuni(ctx.clinic);
 
   el.innerHTML = `
     <div class="ck-patient">
@@ -59,7 +63,7 @@ export default async function patient(el, { id, tab }, ctx) {
         </div>
       </div>
 
-      <nav class="ck-tabs">${Object.entries(TABS).map(([k, label]) => `
+      <nav class="ck-tabs">${Object.entries(tabs).map(([k, label]) => `
         <a href="#/clinica/paciente/${p.id}/${k}" class="${k === tab ? 'on' : ''}">${label}${k === 'historial' && visits.length ? ` <small>${visits.length}</small>` : ''}${k === 'examenes' && files.length ? ` <small>${files.length}</small>` : ''}</a>`).join('')}
       </nav>
 
@@ -148,7 +152,7 @@ export default async function patient(el, { id, tab }, ctx) {
   });
 
   const box = el.querySelector('#ck-tab');
-  const draw = { consulta: drawVisitForm, historial: drawHistory, vacunas: drawVaccines, examenes: drawFiles, signos: drawVitals }[tab];
+  const draw = { consulta: drawVisitForm, historial: drawHistory, vacunas: drawVaccines, examenes: drawFiles, documentos: drawDocuments, signos: drawVitals }[tab];
   await draw(box, { p, visits, vaccines, files, ctx, isVet });
 }
 
@@ -397,6 +401,199 @@ async function drawFiles(box, { p, files, ctx }) {
     const now = await listFiles(p.id).catch(() => files);
     if (now.length !== files.length) ctx.refresh();
   }, 15000);
+}
+
+// ---------- Documentos ----------
+
+const DOC_STATUS = { por_firmar: ['Por firmar', 'sun'], firmado: ['Firmado', 'green'], listo: ['Listo', 'green'], anulado: ['Anulado', ''], vencido: ['Enlace vencido', 'red'] };
+const docStatus = (d) => (d.status === 'por_firmar' && d.createdAt < new Date(Date.now() - 7 * 86400000).toISOString() ? 'vencido' : d.status);
+const docUrl = (d) => `${location.origin}${location.pathname}#/doc/${d.token}`;
+
+function docMessage(d, p, clinic) {
+  const hi = `Hola${p.tutorName ? ` ${p.tutorName.split(' ')[0]}` : ''}`;
+  return d.status === 'por_firmar'
+    ? `${hi}, ${clinic.name} te pide firmar el ${d.title.toLowerCase()} de ${p.name}. Léelo y fírmalo con el dedo aquí: ${docUrl(d)}`
+    : `${hi}, te dejamos ${d.kind === 'receta' ? 'la receta' : `el ${d.title.toLowerCase()}`} de ${p.name}: ${docUrl(d)}`;
+}
+
+async function drawDocuments(box, { p, vaccines, ctx, isVet }, fresh = null) {
+  const docs = await listDocuments(p.id);
+  const kinds = Object.entries(DOC_KINDS);
+  const kindBtn = ([k, d]) => `<button type="button" class="ck-doc-kind" data-kind="${k}"${d.vet && !isVet ? ' disabled title="Solo un veterinario"' : ''}><span>${d.icon}</span>${d.name}</button>`;
+
+  box.innerHTML = `
+    <div class="card ck-docs-new">
+      <h2>Nuevo documento</h2>
+      <p class="muted small">Elige uno y se llena solo con los datos de ${esc(p.name)} y su tutor.</p>
+      <h4>Consentimientos <small>los firma el tutor con el dedo</small></h4>
+      <div class="ck-doc-kinds">${kinds.filter(([, d]) => d.sign).map(kindBtn).join('')}</div>
+      <h4>Recetas y certificados <small>${isVet ? 'con tu firma' : 'solo un veterinario'}</small></h4>
+      <div class="ck-doc-kinds">${kinds.filter(([, d]) => d.vet).map(kindBtn).join('')}</div>
+      <form class="form ck-doc-form" id="ck-doc-form" hidden></form>
+    </div>
+    ${fresh ? sendBox(fresh, p, ctx) : ''}
+    <div class="card ck-list">
+      <h3>Documentos de ${esc(p.name)}</h3>
+      ${docs.length ? docs.map((d) => {
+        const st = docStatus(d);
+        const [label, tone] = DOC_STATUS[st];
+        return `
+          <div class="ck-doc-row ${st === 'anulado' ? 'old' : ''}">
+            <span class="ck-doc-icon">${DOC_KINDS[d.kind]?.icon || '📄'}</span>
+            <span class="ck-doc-main"><strong>${esc(d.title)}</strong>
+              <small>${fmtDate(localDay(new Date(d.createdAt)))}${d.vetName ? ` · ${esc(d.vetName)}` : ''}${d.signerName ? ` · firmó ${esc(d.signerName)}` : ''}</small></span>
+            <span class="ck-tag ${tone}">${label}</span>
+            <span class="ck-doc-acts">
+              <a class="btn small ghost" href="#/doc/${d.token}" target="_blank" rel="noopener">${st === 'por_firmar' ? 'Ver o firmar aquí' : 'Ver e imprimir'}</a>
+              ${['por_firmar', 'firmado', 'listo'].includes(st) ? `<button class="btn small whatsapp" data-wa="${d.id}">WhatsApp</button>` : ''}
+              ${st !== 'anulado' ? `<button class="link danger small" data-void="${d.id}">Anular</button>` : ''}
+            </span>
+          </div>`;
+      }).join('') : '<p class="ck-empty">Aún no hay documentos.</p>'}
+    </div>`;
+
+  const form = box.querySelector('#ck-doc-form');
+  box.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => {
+    box.querySelectorAll('[data-kind]').forEach((x) => x.classList.toggle('on', x === b));
+    docForm(form, b.dataset.kind, { p, vaccines, ctx, redraw: (d) => drawDocuments(box, { p, vaccines, ctx, isVet }, d) });
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }));
+
+  const sendWa = (d) => {
+    const wa = waLink(p.tutorPhone);
+    const text = encodeURIComponent(docMessage(d, p, ctx.clinic));
+    window.open(wa ? `${wa}?text=${text}` : `https://wa.me/?text=${text}`, '_blank', 'noopener');
+  };
+  box.querySelectorAll('[data-wa]').forEach((b) => b.addEventListener('click', () => sendWa(docs.find((d) => d.id === b.dataset.wa))));
+  box.querySelector('[data-wa-new]')?.addEventListener('click', () => sendWa(fresh));
+  box.querySelector('[data-copy-new]')?.addEventListener('click', () => navigator.clipboard?.writeText(docUrl(fresh)).then(() => toast('Enlace copiado', 'ok')));
+  box.querySelectorAll('[data-void]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('¿Anular este documento? Sigue guardado, pero marcado como anulado. Si había un error, crea uno nuevo.')) return;
+    try {
+      await voidDocument(b.dataset.void);
+      drawDocuments(box, { p, vaccines, ctx, isVet });
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  }));
+}
+
+function sendBox(d, p, ctx) {
+  const sign = d.status === 'por_firmar';
+  return `
+    <div class="card ck-doc-sent">
+      <h3>✓ ${esc(d.title)} creado</h3>
+      <p>${sign ? `Ahora falta la firma de ${esc(p.tutorName || 'su tutor')}. Si está aquí, que firme en este equipo; si no, envíale el enlace.` : `Envíaselo a ${esc(p.tutorName || 'su tutor')} o imprímelo.`}</p>
+      ${p.tutorUser ? `<p class="small ck-scan-ok">✓ Le llegó un aviso en su app Kiltrazo.</p>` : ''}
+      <span class="ck-tutor-btns">
+        <a class="btn small ${sign ? 'primary' : 'secondary'}" href="#/doc/${d.token}" target="_blank" rel="noopener">${sign ? '✍️ Firmar en este equipo' : 'Ver e imprimir'}</a>
+        <button class="btn small whatsapp" data-wa-new>Enviar por WhatsApp</button>
+        <button class="btn small ghost" data-copy-new>Copiar enlace</button>
+      </span>
+      ${sign ? '<p class="muted small">El enlace para firmar dura 7 días.</p>' : ''}
+    </div>`;
+}
+
+const SIGN_KEY = (ctx) => `ck-firma-${ctx.me.userId || ctx.me.name}`;
+
+function docForm(form, kind, { p, vaccines, ctx, redraw }) {
+  const k = DOC_KINDS[kind];
+  const doses = [...vaccines].sort((a, b) => b.appliedOn.localeCompare(a.appliedOn));
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(SIGN_KEY(ctx)) || '{}'); } catch { /* nada */ }
+  const field = ([key, label, opt, req]) => (Array.isArray(opt)
+    ? `<label>${label}<select name="f_${key}"${req ? ' required' : ''}><option value="">Elige…</option>${opt.map((o) => `<option>${o}</option>`).join('')}</select></label>`
+    : `<label>${label}<input name="f_${key}" placeholder="${esc(opt)}"${req ? ' required' : ''} maxlength="200"></label>`);
+  const item = () => `
+    <div class="ck-rx-item">
+      <input name="med" placeholder="Medicamento y concentración" maxlength="120">
+      <input name="dose" placeholder="Dosis (ej.: 1 comprimido)" maxlength="80">
+      <input name="every" placeholder="Cada (ej.: 12 horas)" maxlength="60">
+      <input name="days" placeholder="Por (ej.: 7 días)" maxlength="60">
+    </div>`;
+  const vacTable = doses.length
+    ? `<div class="ck-table-wrap"><table class="ck-table"><thead><tr><th>Dosis</th><th>Puesta</th><th>Próxima</th></tr></thead><tbody>${doses.map((v) => `
+        <tr><td><strong>${esc(v.name)}</strong><small>${KINDS[v.kind]}</small></td><td class="ck-mono">${fmtDate(v.appliedOn)}</td><td class="ck-mono">${fmtDate(v.nextDue) || '—'}</td></tr>`).join('')}</tbody></table></div>`
+    : '';
+
+  form.hidden = false;
+  form.innerHTML = `
+    <h3>${k.icon} ${k.name}</h3>
+    <label>Título<input name="title" value="${esc(k.title)}" required maxlength="120"></label>
+    ${k.fields ? `<div class="ck-doc-fields">${k.fields.map(field).join('')}</div>` : ''}
+    ${k.body ? `<label>Texto <small class="muted">puedes cambiarlo antes de crearlo</small><textarea name="body" rows="${k.sign ? 12 : 4}" maxlength="8000"></textarea></label>` : ''}
+    ${kind === 'receta' ? `
+      <div class="ck-rx"><b>Medicamentos</b>
+        <div class="ck-rx-item ck-rx-head"><span>Medicamento</span><span>Dosis</span><span>Cada</span><span>Por</span></div><div id="ck-rx-items">${item()}</div>
+        <button type="button" class="link small" id="ck-rx-add">+ Agregar otro medicamento</button></div>
+      <label>Indicaciones<textarea name="notes" rows="3" maxlength="2000" placeholder="Ej.: dar con comida. Control en 10 días."></textarea></label>` : ''}
+    ${kind === 'certificado_vacunas' || kind === 'certificado_salud' ? `
+      <div><b>${kind === 'certificado_salud' ? 'Vacunas que se incluyen' : 'Dosis que se certifican'}</b>
+      ${vacTable || `<p class="muted small">${esc(p.name)} no tiene vacunas registradas. ${kind === 'certificado_vacunas' ? 'Regístralas primero en la pestaña Vacunas.' : ''}</p>`}</div>` : ''}
+    ${k.vet ? `
+      <div class="ck-doc-vet">
+        <label>Tu nombre<input name="vetName" value="${esc(ctx.me.name || '')}" required maxlength="120"></label>
+        <label>Tu RUT (opcional)<input name="vetRut" value="${esc(saved.rut || '')}" maxlength="20" placeholder="12.345.678-9"></label>
+        <div class="ck-span"><b>Tu firma</b> <small class="muted">queda guardada en este equipo para la próxima</small><div id="ck-vet-sign"></div></div>
+      </div>` : ''}
+    <div class="ck-row-end">
+      <button type="button" class="btn ghost small" id="ck-doc-cancel">Cancelar</button>
+      <button class="btn primary"${kind === 'certificado_vacunas' && !doses.length ? ' disabled' : ''}>${k.sign ? 'Crear y pedir firma' : 'Crear documento'}</button>
+    </div>`;
+
+  // El texto se arma con los datos; si la persona lo cambia a mano, se respeta.
+  const body = form.body;
+  let touched = false;
+  const values = () => Object.fromEntries((k.fields || []).map(([key]) => [key, form[`f_${key}`].value.trim()]));
+  const refill = () => { if (body && !touched) body.value = fillBody(kind, { p, clinic: ctx.clinic, values: values() }); };
+  refill();
+  body?.addEventListener('input', () => { touched = true; });
+  form.querySelectorAll('[name^="f_"]').forEach((i) => i.addEventListener('input', refill));
+  form.querySelectorAll('select[name^="f_"]').forEach((i) => i.addEventListener('change', refill));
+
+  form.querySelector('#ck-rx-add')?.addEventListener('click', () => {
+    form.querySelector('#ck-rx-items').insertAdjacentHTML('beforeend', item());
+    form.querySelector('#ck-rx-items').lastElementChild.querySelector('input').focus();
+  });
+  const pad = k.vet ? signaturePad(form.querySelector('#ck-vet-sign'), { initial: saved.signature || '' }) : null;
+  form.querySelector('#ck-doc-cancel').addEventListener('click', () => {
+    form.hidden = true;
+    form.closest('.card').querySelectorAll('[data-kind]').forEach((x) => x.classList.remove('on'));
+  });
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (body && /\{\w+\}/.test(body.value)) return toast('Completa los datos que faltan en el texto', 'bad');
+    if (pad?.isEmpty()) return toast('Falta tu firma', 'bad');
+    const data = {};
+    if (k.fields) Object.assign(data, values());
+    if (kind === 'receta') {
+      data.items = [...form.querySelectorAll('#ck-rx-items .ck-rx-item')].map((r) => Object.fromEntries([...r.querySelectorAll('input')].map((i) => [i.name, i.value.trim()])))
+        .filter((i) => i.med);
+      if (!data.items.length) return toast('Escribe al menos un medicamento', 'bad');
+      data.notes = form.notes.value.trim();
+    }
+    if (kind.startsWith('certificado')) data.vaccines = doses.map((v) => ({ kind: v.kind, name: v.name, appliedOn: v.appliedOn, nextDue: v.nextDue, batch: v.batch || '' }));
+    let vetSignature = null;
+    if (k.vet) {
+      vetSignature = pad.toDataURL();
+      data.vetRut = form.vetRut.value.trim();
+      try { localStorage.setItem(SIGN_KEY(ctx), JSON.stringify({ rut: data.vetRut, signature: vetSignature })); } catch { /* sin espacio */ }
+    }
+    const btn = form.querySelector('.ck-row-end .primary');
+    btn.disabled = true;
+    try {
+      const d = await createDocument({
+        clinicId: ctx.clinic.id, patientId: p.id, kind, title: form.title.value.trim(), body: body ? body.value.trim() : '', data,
+        vetName: k.vet ? form.vetName.value.trim() : ctx.me.name || '', vetSignature,
+      });
+      toast('Documento creado', 'ok');
+      redraw(d);
+    } catch (err) {
+      toast(err.message, 'bad');
+      btn.disabled = false;
+    }
+  };
 }
 
 // ---------- Peso y signos ----------

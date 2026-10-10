@@ -892,3 +892,64 @@ a.card.tag-only { display: flex; gap: 12px; align-items: center; text-decoration
 body.web-mode:has(.study-head) #app { max-width: 560px; padding: 16px 16px 40px; }
 .study-code { letter-spacing: 0.08em; }
 .study-guest-btns { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ---------- Firma con el dedo ---------- */
+.sig-pad { position: relative; border: 2px dashed var(--line); border-radius: 14px; background: #fff; height: 170px; touch-action: none; }
+.sig-pad canvas { width: 100%; height: 100%; display: block; border-radius: 12px; cursor: crosshair; touch-action: none; }
+.sig-hint { position: absolute; inset: auto 0 14px; text-align: center; color: var(--muted); font-weight: 700; pointer-events: none; }
+.sig-hint::before { content: ''; display: block; margin: 0 24px 6px; border-top: 1px solid var(--line); }
+.sig-pad.signed .sig-hint { visibility: hidden; }
+.sig-clear { position: absolute; top: 6px; right: 10px; }
+
+/* ---------- Documento de la clínica (#/doc/…) ---------- */
+body.doc-mode #app { max-width: 820px; padding: 16px 16px 48px; }
+.doc-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.doc-brand { height: 30px; }
+.doc-void { background: #fde3dd; color: #b3402a; font-weight: 800; padding: 10px 14px; border-radius: 12px; margin-bottom: 12px; text-align: center; }
+.doc-sheet { background: #fff; color: #222; border-radius: 6px; box-shadow: var(--shadow); padding: 40px 48px; font-size: 0.98rem; line-height: 1.5; }
+.doc-head { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; border-bottom: 2px solid #eee; }
+.doc-head div { display: grid; }
+.doc-head b { font-size: 1.15rem; }
+.doc-head small { color: #666; }
+.doc-logo { width: 64px; height: 64px; object-fit: contain; }
+.doc-sheet h1 { font-size: 1.45rem; margin: 22px 0 2px; text-align: center; }
+.doc-date { text-align: center; color: #666; margin: 0 0 18px; }
+.doc-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 16px; margin: 0 0 18px; padding: 12px 14px; background: #f7f5f2; border-radius: 8px; }
+.doc-facts div { display: grid; }
+.doc-facts dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #777; }
+.doc-facts dd { margin: 0; font-weight: 700; }
+.doc-text { white-space: pre-wrap; text-align: justify; }
+.doc-sheet h3 { font-size: 1rem; margin: 18px 0 4px; }
+.doc-rx { padding-left: 22px; display: grid; gap: 10px; }
+.doc-rx li span { display: block; color: #444; }
+.doc-table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 0.9rem; }
+.doc-table th, .doc-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
+.doc-table th { font-size: 0.75rem; text-transform: uppercase; color: #777; }
+.doc-table small { display: block; color: #777; }
+.doc-signs { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 24px; margin-top: 36px; }
+.doc-sign { display: grid; justify-items: center; text-align: center; min-width: 220px; }
+.doc-sign img { width: 240px; height: 80px; object-fit: contain; border-bottom: 1px solid #333; }
+.doc-line { width: 240px; height: 80px; border-bottom: 1px solid #333; }
+.doc-sign small { color: #666; }
+.doc-small { color: #666; font-size: 0.85rem; margin-top: 18px; }
+.doc-foot { margin-top: 30px; padding-top: 10px; border-top: 1px solid #eee; color: #999; font-size: 0.75rem; text-align: center; }
+.doc-signform { margin-top: 16px; }
+.doc-signform h2 { margin-top: 0; }
+.doc-signform .check { display: flex; gap: 8px; align-items: center; font-weight: 700; }
+.doc-signform .check input { width: 22px; height: 22px; }
+.doc-tip { text-align: center; }
+.doc-missing { max-width: 520px; margin: 40px auto; text-align: center; }
+.vet-docs a { display: grid; color: inherit; text-decoration: none; }
+.vet-docs .vet-status { justify-self: start; margin-top: 2px; }
+@media (max-width: 600px) {
+  .doc-sheet { padding: 22px 18px; font-size: 0.95rem; }
+  .doc-text { text-align: left; }
+  .doc-sign img, .doc-line { width: 200px; }
+}
+@media print {
+  body, body.doc-mode { background: #fff; }
+  body.doc-mode #app { max-width: none; padding: 0; }
+  .no-print, .toast, .cookie-bar { display: none !important; }
+  .doc-sheet { box-shadow: none; padding: 0; border-radius: 0; }
+  .doc-facts { background: #f5f5f5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

@@ -36,6 +36,7 @@ import gift, { pendingGift, GIFT_KEY } from './views/gift.js';
 import moved from './views/moved.js';
 import kiltrazoPoint from './views/kiltrazo-point.js';
 import studyPoint from './views/study.js';
+import doc from './views/doc.js';
 import { leaveIfMoved, arriveAfterMove } from './move.js';
 
 registerSW({ immediate: true });
@@ -108,6 +109,7 @@ const routes = [
   ['operativo/:id', drivePage],
   ['punto', kiltrazoPoint],
   ['estudio', studyPoint],
+  ['doc/:token', doc],
 ];
 
 function resolve(hash) {
@@ -182,10 +184,11 @@ async function render() {
   // Quien llega por primera vez, sin perfil, ve la presentación de Kiltrazo.
   if (!isComplete(user) && view === home) view = landing;
   // Estas páginas se ven sin la app: sin menú y sin pedir el perfil.
-  document.body.classList.toggle('web-mode', [clinicPage, finder, landing, tag, seen, drivePage, studyPoint].includes(view));
+  document.body.classList.toggle('web-mode', [clinicPage, finder, landing, tag, seen, drivePage, studyPoint, doc].includes(view));
+  document.body.classList.toggle('doc-mode', view === doc);
   document.body.classList.toggle('finder-mode', view === finder || view === landing);
   // Primer uso, o perfil creado antes de pedir todos los datos: completar perfil.
-  if (!isComplete(user) && ![profile, admin, password, privacy, terms, clinicPage, finder, landing, moved, tag, seen, drivePage, kiltrazoPoint, studyPoint].includes(view)) view = profile;
+  if (!isComplete(user) && ![profile, admin, password, privacy, terms, clinicPage, finder, landing, moved, tag, seen, drivePage, kiltrazoPoint, studyPoint, doc].includes(view)) view = profile;
 
   const tab = hash.replace(/^#\/?/, '').split('/')[0];
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));

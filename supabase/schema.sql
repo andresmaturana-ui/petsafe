@@ -3163,3 +3163,154 @@ language sql stable security definer set search_path = public as $$
   select h.tag, h.name, h.sex from study_horses h where study_ok() order by h.tag;
 $$;
 grant execute on function public.study_horse_list() to authenticated;
+
+-- ---------- Kiltrazo Clínica (fase 2): documentos y consentimientos ----------
+-- La clínica arma el documento desde una plantilla con los datos de la
+-- mascota y el tutor. Los consentimientos los firma el tutor con el dedo en su
+-- celular (llega un aviso a su app o un enlace por WhatsApp) o en la clínica.
+-- Las recetas y certificados no se firman: quedan listos al crearlos, con la
+-- firma del veterinario. Nada se edita después de crearlo; si hay un error se
+-- anula y se hace otro. Quien tiene el enlace (token) ve el documento.
+create table if not exists public.clinic_documents (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references public.clinics on delete cascade,
+  patient_id uuid not null references public.clinic_patients on delete cascade,
+  kind text not null check (kind in ('consentimiento_cirugia', 'consentimiento_hospitalizacion', 'consentimiento_eutanasia',
+    'receta', 'certificado_vacunas', 'certificado_salud')),
+  title text not null check (char_length(title) between 1 and 120),
+  body text not null default '' check (char_length(body) <= 8000),
+  data jsonb not null default '{}'::jsonb,
+  vet_id uuid default auth.uid() references auth.users on delete set null,
+  vet_name text not null default '',
+  vet_signature text check (vet_signature is null or length(vet_signature) < 300000),
+  status text not null default 'listo' check (status in ('por_firmar', 'firmado', 'listo', 'anulado')),
+  token text not null unique default replace(gen_random_uuid()::text, '-', ''),
+  signer_name text,
+  signer_rut text,
+  signature text,
+  signer_user uuid references auth.users on delete set null,
+  signed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists clinic_documents_patient on public.clinic_documents (patient_id, created_at desc);
+
+-- Al crearlo la base decide el estado y el enlace: los consentimientos quedan
+-- por firmar y lo demás listo. Recetas y certificados solo los hace un veterinario.
+create or replace function public.new_clinic_document() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare cp clinic_patients;
+begin
+  select * into cp from clinic_patients where id = new.patient_id;
+  if cp.clinic_id is distinct from new.clinic_id then raise exception 'Paciente no encontrado'; end if;
+  if new.kind not like 'consentimiento%' and not is_clinic_vet(new.clinic_id) then
+    raise exception 'Solo un veterinario puede hacer recetas y certificados';
+  end if;
+  new.status := case when new.kind like 'consentimiento%' then 'por_firmar' else 'listo' end;
+  new.token := replace(gen_random_uuid()::text, '-', '');
+  new.vet_id := auth.uid();
+  new.signer_name := null; new.signer_rut := null; new.signature := null; new.signer_user := null; new.signed_at := null;
+  new.created_at := now();
+  return new;
+end $$;
+drop trigger if exists new_clinic_document on public.clinic_documents;
+create trigger new_clinic_document before insert on public.clinic_documents
+  for each row execute function public.new_clinic_document();
+
+-- Aviso en la app del tutor, si la mascota está vinculada.
+create or replace function public.notify_clinic_document() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare cp clinic_patients; c clinics;
+begin
+  select * into cp from clinic_patients where id = new.patient_id;
+  if cp.tutor_user is null then return new; end if;
+  select * into c from clinics where id = new.clinic_id;
+  insert into notifications (user_id, type, title, body, url) values (cp.tutor_user, 'documento',
+    case when new.status = 'por_firmar' then 'Firma pendiente para ' || cp.name else new.title || ' de ' || cp.name end,
+    case when new.status = 'por_firmar' then c.name || ' te pide firmar: ' || new.title || '. Tócalo para leerlo y firmar con el dedo.'
+      else c.name || ' te dejó este documento en Kiltrazo.' end,
+    '#/doc/' || new.token);
+  return new;
+end $$;
+drop trigger if exists notify_clinic_document on public.clinic_documents;
+create trigger notify_clinic_document after insert on public.clinic_documents
+  for each row execute function public.notify_clinic_document();
+
+alter table public.clinic_documents enable row level security;
+drop policy if exists "equipo ve documentos" on public.clinic_documents;
+create policy "equipo ve documentos" on public.clinic_documents for select using (is_clinic_member(clinic_id));
+drop policy if exists "equipo crea documentos" on public.clinic_documents;
+create policy "equipo crea documentos" on public.clinic_documents for insert with check (is_clinic_member(clinic_id));
+-- Sin update ni delete: solo se anula con void_document.
+
+create or replace function public.void_document(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  update clinic_documents set status = 'anulado' where id = p_id and is_clinic_member(clinic_id) and status <> 'anulado';
+  if not found then raise exception 'Documento no encontrado'; end if;
+end $$;
+grant execute on function public.void_document(uuid) to authenticated;
+
+-- El documento para mostrarlo o imprimirlo, con el enlace (sin cuenta).
+create or replace function public.document_by_token(p_token text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'id', d.id, 'kind', d.kind, 'title', d.title, 'body', d.body, 'data', d.data, 'vet_name', d.vet_name,
+    'vet_signature', d.vet_signature, 'status', case when d.status = 'por_firmar' and d.created_at < now() - interval '7 days' then 'vencido' else d.status end,
+    'signer_name', d.signer_name, 'signer_rut', d.signer_rut, 'signature', d.signature, 'signed_at', d.signed_at, 'created_at', d.created_at,
+    'clinic', jsonb_build_object('name', c.name, 'address', c.address, 'phone', c.phone, 'logo', c.logo, 'rut', c.rut),
+    'patient', jsonb_build_object('name', cp.name, 'species', cp.species, 'breed', cp.breed, 'sex', cp.sex, 'neutered', cp.neutered,
+      'birth_date', cp.birth_date, 'chip', cp.chip, 'color', cp.color, 'tutor_name', cp.tutor_name, 'tutor_phone', cp.tutor_phone,
+      'tutor_address', cp.tutor_address))
+  from clinic_documents d join clinics c on c.id = d.clinic_id join clinic_patients cp on cp.id = d.patient_id
+  where d.token = trim(p_token);
+$$;
+grant execute on function public.document_by_token(text) to anon, authenticated;
+
+-- El tutor firma con el dedo. El enlace para firmar dura 7 días.
+create or replace function public.sign_document(p_token text, p_name text, p_rut text, p_signature text) returns void
+language plpgsql security definer set search_path = public as $$
+declare d clinic_documents; pname text;
+begin
+  if coalesce(trim(p_name), '') = '' then raise exception 'Escribe tu nombre'; end if;
+  if p_signature is null or p_signature not like 'data:image/png;base64,%' or length(p_signature) > 300000 then
+    raise exception 'Falta la firma';
+  end if;
+  update clinic_documents set status = 'firmado', signer_name = left(trim(p_name), 120), signer_rut = left(trim(coalesce(p_rut, '')), 20),
+    signature = p_signature, signer_user = auth.uid(), signed_at = now()
+  where token = trim(p_token) and status = 'por_firmar' and created_at > now() - interval '7 days'
+  returning * into d;
+  if d.id is null then raise exception 'Este documento ya se firmó, se anuló o el enlace venció. Pide uno nuevo a tu veterinaria.'; end if;
+  select name into pname from clinic_patients where id = d.patient_id;
+  if d.vet_id is not null then
+    insert into notifications (user_id, type, title, body, url) values (d.vet_id, 'documento',
+      d.signer_name || ' firmó', d.title || ' de ' || pname || '.', '#/clinica/paciente/' || d.patient_id || '/documentos');
+  end if;
+end $$;
+grant execute on function public.sign_document(text, text, text, text) to anon, authenticated;
+
+-- El tutor ve en "Mi veterinaria" los documentos de su mascota.
+create or replace function public.pet_health(p_pet uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not exists (select 1 from pets where id = p_pet and owner_id = auth.uid()) then
+    raise exception 'Mascota no encontrada';
+  end if;
+  return jsonb_build_object(
+    'clinics', coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'phone', c.phone, 'address', c.address,
+        'home_visits', c.home_visits, 'only_home', c.only_home))
+      from clinics c where c.id in (select clinic_id from clinic_patients where pet_id = p_pet and removed_at is null)), '[]'::jsonb),
+    'vaccines', coalesce((select jsonb_agg(jsonb_build_object('kind', v.kind, 'name', v.name, 'applied_on', v.applied_on,
+        'next_due', v.next_due, 'clinic', c.name) order by v.applied_on desc)
+      from clinic_vaccines v join clinic_patients cp on cp.id = v.patient_id join clinics c on c.id = v.clinic_id
+      where cp.pet_id = p_pet), '[]'::jsonb),
+    'appointments', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'starts_at', a.starts_at, 'service', a.service,
+        'status', a.status, 'place', a.place, 'address', a.address, 'clinic', c.name, 'confirmed_at', a.confirmed_at) order by a.starts_at)
+      from clinic_appointments a join clinic_patients cp on cp.id = a.patient_id join clinics c on c.id = a.clinic_id
+      where cp.pet_id = p_pet and a.starts_at >= now() - interval '3 hours'
+        and a.status in ('solicitada', 'agendada', 'en_camino')), '[]'::jsonb),
+    'documents', coalesce((select jsonb_agg(jsonb_build_object('token', d.token, 'kind', d.kind, 'title', d.title,
+        'status', case when d.status = 'por_firmar' and d.created_at < now() - interval '7 days' then 'vencido' else d.status end,
+        'created_at', d.created_at, 'clinic', c.name) order by d.created_at desc)
+      from clinic_documents d join clinic_patients cp on cp.id = d.patient_id join clinics c on c.id = d.clinic_id
+      where cp.pet_id = p_pet and d.status <> 'anulado'), '[]'::jsonb));
+end $$;

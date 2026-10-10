@@ -7,12 +7,12 @@ import { kmBetween } from '../geo.js';
 import { comunaKey } from '../comunas.js';
 
 const TABLES = ['clinics', 'clinic_members', 'clinic_invites', 'clinic_patients', 'clinic_visits', 'clinic_vaccines',
-  'clinic_files', 'clinic_appointments', 'pet_codes', 'clinic_blobs', 'clinic_transfers', 'landing_banners', 'clinic_drives', 'muni_matches', 'drive_notices'];
+  'clinic_files', 'clinic_appointments', 'pet_codes', 'clinic_blobs', 'clinic_transfers', 'landing_banners', 'clinic_drives', 'muni_matches', 'drive_notices', 'clinic_documents'];
 
 let dbPromise;
 function open() {
   dbPromise ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open('kiltrazo-clinica', 5);
+    const req = indexedDB.open('kiltrazo-clinica', 6);
     req.onupgradeneeded = () => {
       for (const t of TABLES) if (!req.result.objectStoreNames.contains(t)) req.result.createObjectStore(t, { keyPath: 'id' });
     };
@@ -63,6 +63,10 @@ const DEFAULTS = {
 export async function insert(table, row) {
   const me = (await app.currentUser())?.id;
   const extra = { clinic_visits: { vetId: me }, clinic_files: { uploadedBy: me } }[table] || {};
+  // Igual que new_clinic_document en la base: el estado y el enlace los pone la base.
+  if (table === 'clinic_documents') {
+    Object.assign(extra, { vetId: me, token: uuid().replace(/-/g, ''), status: row.kind.startsWith('consentimiento') ? 'por_firmar' : 'listo' });
+  }
   const saved = await put(table, { ...DEFAULTS[table]?.(), ...extra, ...row, id: uuid(), createdAt: now() });
   // Igual que en la base: si un paciente quitado vuelve a pedir hora, reaparece.
   if (table === 'clinic_appointments' && saved.patientId) {
@@ -70,6 +74,7 @@ export async function insert(table, row) {
     if (cp?.removedAt) await update('clinic_patients', cp.id, { removedAt: null });
   }
   if (table === 'clinic_drives') await notifyDrive(saved.id);
+  if (table === 'clinic_documents') await notifyDocument(saved);
   return saved;
 }
 
@@ -242,7 +247,60 @@ export async function petHealth(petId) {
       .filter((a) => ids.has(a.patientId) && ['solicitada', 'agendada', 'en_camino'].includes(a.status) && a.startsAt >= new Date(Date.now() - 3 * 3600000).toISOString())
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
       .map((a) => ({ id: a.id, startsAt: a.startsAt, service: a.service, status: a.status, place: a.place || 'clinica', address: a.address || '', clinic: name(a.clinicId), confirmedAt: a.confirmedAt || null })),
+    documents: (await all('clinic_documents'))
+      .filter((d) => ids.has(d.patientId) && d.status !== 'anulado')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((d) => ({ token: d.token, kind: d.kind, title: d.title, status: docStatus(d), createdAt: d.createdAt, clinic: name(d.clinicId) })),
   };
+}
+
+// ---------- Documentos y consentimientos ----------
+
+const docStatus = (d) => (d.status === 'por_firmar' && d.createdAt < new Date(Date.now() - 7 * 86400000).toISOString() ? 'vencido' : d.status);
+
+async function notifyDocument(d) {
+  const cp = await get('clinic_patients', d.patientId);
+  if (!cp?.tutorUser) return;
+  const c = await get('clinics', d.clinicId);
+  const sign = d.status === 'por_firmar';
+  await app.notify(cp.tutorUser, {
+    title: sign ? `Firma pendiente para ${cp.name}` : `${d.title} de ${cp.name}`,
+    body: sign ? `${c.name} te pide firmar: ${d.title}. Tócalo para leerlo y firmar con el dedo.` : `${c.name} te dejó este documento en Kiltrazo.`,
+    url: `#/doc/${d.token}`,
+  });
+}
+
+export async function voidDocument(id) {
+  return update('clinic_documents', id, { status: 'anulado' });
+}
+
+export async function documentByToken(token) {
+  const d = (await all('clinic_documents')).find((x) => x.token === token);
+  if (!d) return null;
+  const c = await get('clinics', d.clinicId);
+  const cp = await get('clinic_patients', d.patientId);
+  return {
+    ...d, status: docStatus(d),
+    clinic: { name: c.name, address: c.address || '', phone: c.phone || '', logo: c.logo || null, rut: c.rut || '' },
+    patient: {
+      name: cp.name, species: cp.species, breed: cp.breed, sex: cp.sex, neutered: cp.neutered, birthDate: cp.birthDate, chip: cp.chip,
+      color: cp.color, tutorName: cp.tutorName, tutorPhone: cp.tutorPhone, tutorAddress: cp.tutorAddress || '',
+    },
+  };
+}
+
+export async function signDocument(token, { name, rut, signature }) {
+  if (!String(name || '').trim()) throw new Error('Escribe tu nombre');
+  if (!String(signature || '').startsWith('data:image/png;base64,')) throw new Error('Falta la firma');
+  const d = (await all('clinic_documents')).find((x) => x.token === token);
+  if (!d || docStatus(d) !== 'por_firmar') throw new Error('Este documento ya se firmó, se anuló o el enlace venció. Pide uno nuevo a tu veterinaria.');
+  const me = await app.currentUser();
+  await update('clinic_documents', d.id, {
+    status: 'firmado', signerName: name.trim(), signerRut: String(rut || '').trim(), signature, signerUser: me?.id || null, signedAt: now(),
+  });
+  const cp = await get('clinic_patients', d.patientId);
+  if (d.vetId) await app.notify(d.vetId, { title: `${name.trim()} firmó`, body: `${d.title} de ${cp.name}.`, url: `#/clinica/paciente/${d.patientId}/documentos` });
+  return true;
 }
 
 export async function runReminders() {
