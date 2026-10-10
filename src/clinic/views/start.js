@@ -148,16 +148,13 @@ export default function start(el, { session, refresh, pendingCode, muni = false 
   let point = null;
   const pick = el.querySelector('#ck-map-pick');
   const onMap = el.querySelector('[name="onMap"]');
-  import('../../map.js').then(({ pickPoint }) => {
+  import('../../map.js').then(({ pickPoint, bindPlaceSearch }) => {
     const picker = pickPoint(el.querySelector('#ck-map'), null, (p) => { point = p; });
     onMap.addEventListener('change', () => {
       pick.hidden = !onMap.checked;
       if (onMap.checked) picker.map.invalidateSize();
     });
-    el.querySelector('#ck-here').addEventListener('click', async () => {
-      const loc = await getLocation();
-      loc ? picker.set(loc) : toast('No pudimos obtener tu ubicación', 'bad');
-    });
+    bindPlaceSearch(picker, { input: create.address, hereBtn: el.querySelector('#ck-here'), getLocation, say: toast });
   });
 
   submit('#ck-create', async (d) => {

@@ -61,12 +61,11 @@ export const muniDataForm = (c) => `
 export function bindMuniForm(form, c = {}) {
   let point = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : null;
   const logo = bindLogo(form);
-  import('../map.js').then(({ pickPoint }) => {
+  import('../map.js').then(({ pickPoint, bindPlaceSearch }) => {
     const picker = pickPoint(form.querySelector('#ck-map'), point, (p) => { point = p; });
-    form.querySelector('#ck-here').addEventListener('click', async () => {
-      const loc = await getLocation();
-      loc ? picker.set(loc) : toast('No pudimos obtener tu ubicación', 'bad');
-    });
+    const query = () => [form.address.value, form.comuna.value].filter((x) => x.trim()).join(', ');
+    bindPlaceSearch(picker, { input: form.address, query, hereBtn: form.querySelector('#ck-here'), getLocation, say: toast });
+    form.comuna.addEventListener('change', () => form.address.dispatchEvent(new Event('change')));
   });
   return () => {
     const f = Object.fromEntries(new FormData(form));

@@ -54,6 +54,42 @@ export function pickPoint(el, initial, onChange) {
   return { map, set: (p) => { marker.setLatLng([p.lat, p.lng]); map.setView([p.lat, p.lng], 16); emit(); } };
 }
 
+/** Busca una dirección en Chile (OpenStreetMap). Devuelve { lat, lng } o null. */
+export async function findAddress(q) {
+  if (!q || q.trim().length < 4) return null;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=cl&accept-language=es&q=${encodeURIComponent(q.trim())}`;
+  try {
+    const [r] = await (await fetch(url)).json();
+    return r ? { lat: Number(r.lat), lng: Number(r.lon) } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * El mapa sigue a la dirección escrita, y "usar mi ubicación" avisa si el
+ * equipo da una ubicación aproximada (los computadores la calculan por
+ * internet y suelen marcar el centro de Santiago).
+ * query(): texto a buscar (dirección y comuna). say(msg, tone): avisos.
+ */
+export function bindPlaceSearch(picker, { input, query = () => input.value, hereBtn, getLocation, say }) {
+  input?.addEventListener('change', async () => {
+    const p = await findAddress(query());
+    if (p) {
+      picker.set(p);
+      say('Movimos la huella a la dirección. Revisa que quede justo en el lugar; si no, tócalo en el mapa.', 'ok');
+    } else if (input.value.trim()) {
+      say('No encontramos esa dirección en el mapa. Toca el mapa para marcar el lugar.', 'bad');
+    }
+  });
+  hereBtn?.addEventListener('click', async () => {
+    const loc = await getLocation();
+    if (!loc) return say('No pudimos obtener tu ubicación. Activa la ubicación para el navegador, o escribe la dirección o toca el mapa.', 'bad');
+    picker.set(loc);
+    if (loc.accuracy > 1000) say('Este equipo da una ubicación aproximada y puede estar lejos. Escribe la dirección o toca el mapa en el lugar correcto.', 'bad');
+  });
+}
+
 export const TRAVEL_MODES = [
   { mode: 'driving', label: 'Auto', icon: '🚗' },
   { mode: 'bicycling', label: 'Bicicleta', icon: '🚲' },

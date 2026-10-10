@@ -152,12 +152,9 @@ export default function team(el, _params, ctx) {
   let point = clinic.lat != null && clinic.lng != null ? { lat: clinic.lat, lng: clinic.lng } : null;
   const mapEl = el.querySelector('#ck-map');
   if (mapEl) {
-    import('../../map.js').then(({ pickPoint }) => {
+    import('../../map.js').then(({ pickPoint, bindPlaceSearch }) => {
       const picker = pickPoint(mapEl, point, (p) => { point = p; });
-      el.querySelector('#ck-here').addEventListener('click', async () => {
-        const loc = await getLocation();
-        loc ? picker.set(loc) : toast('No pudimos obtener tu ubicación', 'bad');
-      });
+      bindPlaceSearch(picker, { input: el.querySelector('#ck-clinic [name="address"]'), hereBtn: el.querySelector('#ck-here'), getLocation, say: toast });
     });
   }
 
