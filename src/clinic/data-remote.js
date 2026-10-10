@@ -139,7 +139,23 @@ export async function createPetCode(petId) {
 
 export async function petHealth(petId) {
   const r = await run(sb().rpc('pet_health', { p_pet: petId }));
-  return { clinics: r.clinics.map(camel), vaccines: r.vaccines.map(camel), appointments: r.appointments.map(camel) };
+  return { clinics: r.clinics.map(camel), vaccines: r.vaccines.map(camel), appointments: r.appointments.map(camel), documents: (r.documents || []).map(camel) };
+}
+
+// ---------- Documentos y consentimientos ----------
+
+export async function voidDocument(id) {
+  return run(sb().rpc('void_document', { p_id: id }));
+}
+
+/** El documento con su enlace, para verlo, imprimirlo o firmarlo (sin cuenta). */
+export async function documentByToken(token) {
+  const d = camel(await run(sb().rpc('document_by_token', { p_token: token })));
+  return d && { ...d, clinic: camel(d.clinic), patient: camel(d.patient) };
+}
+
+export async function signDocument(token, { name, rut, signature }) {
+  return run(sb().rpc('sign_document', { p_token: token, p_name: name, p_rut: rut, p_signature: signature }));
 }
 
 export async function removePatient(patientId) {

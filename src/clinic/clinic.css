@@ -415,3 +415,43 @@ a.ck-prow-main { color: inherit; text-decoration: none; }
 .ck-point-qr { width: min(260px, 70vw); height: auto; aspect-ratio: 1; border-radius: 14px; background: #fff; margin: 8px 0 0; }
 .ck-point-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 6px 0; }
 .ck-point-btns .btn { width: auto; }
+
+/* ---------- Documentos ---------- */
+.ck-docs-new h4 { margin: 14px 0 6px; font-size: 0.95rem; }
+.ck-docs-new h4 small { font-weight: 600; color: var(--muted); }
+.ck-doc-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ck-doc-kind { display: flex; align-items: center; gap: 8px; text-align: left; font: inherit; font-weight: 800; font-size: 0.9rem; padding: 10px 12px;
+  border: 2px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text); cursor: pointer; }
+.ck-doc-kind span { font-size: 1.3rem; }
+.ck-doc-kind:hover:not(:disabled) { border-color: var(--orange); }
+.ck-doc-kind.on { border-color: var(--coral); background: var(--cream); }
+.ck-doc-kind:disabled { opacity: 0.45; cursor: not-allowed; }
+.ck-doc-form { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.ck-doc-form h3 { margin: 0; }
+.ck-doc-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ck-doc-form textarea { line-height: 1.45; }
+.ck-rx { display: grid; gap: 6px; }
+.ck-rx-item { display: grid; grid-template-columns: 2fr 1.3fr 1fr 1fr; gap: 6px; }
+.ck-doc-vet { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ck-doc-vet .ck-span { grid-column: 1 / -1; }
+.ck-doc-vet .sig-pad { max-width: 420px; }
+.ck-doc-sent { border: 2px solid var(--green); }
+.ck-doc-sent h3 { margin-top: 0; }
+.ck-doc-sent .ck-tutor-btns { justify-content: flex-start; flex-wrap: wrap; }
+.ck-doc-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.ck-list h3 + .ck-doc-row { border-top: 0; }
+.ck-doc-row.old { opacity: 0.55; }
+.ck-doc-icon { font-size: 1.4rem; }
+.ck-doc-main { display: grid; }
+.ck-doc-main small { color: var(--muted); }
+.ck-doc-acts { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .ck-doc-kinds { grid-template-columns: 1fr 1fr; }
+  .ck-doc-fields, .ck-doc-vet { grid-template-columns: 1fr; }
+  .ck-rx-item { grid-template-columns: 1fr 1fr; padding-bottom: 8px; border-bottom: 1px dashed var(--line); }
+  .ck-rx-item input[name="med"] { grid-column: 1 / -1; }
+}
+.ck-rx-head span { font-size: 0.75rem; font-weight: 800; color: var(--muted); }
+.ck-rx #ck-rx-items { display: grid; gap: 6px; }
+.ck-rx #ck-rx-add { justify-self: start; }
+@media (max-width: 700px) { .ck-rx-head { display: none; } }

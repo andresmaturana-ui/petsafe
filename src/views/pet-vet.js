@@ -1,6 +1,7 @@
 // "Mi veterinaria" en el perfil del tutor: el código (y QR) para que su
 // clínica vincule a la mascota en Kiltrazo Clínica, y lo que la clínica
-// registró: vacunas y próximas horas. Las notas clínicas no se muestran.
+// registró: vacunas, próximas horas y documentos (consentimientos para
+// firmar, recetas y certificados). Las notas clínicas no se muestran.
 // Desde aquí también se pide hora en la clínica o a domicilio.
 
 import { esc, toast, getLocation } from '../ui.js';
@@ -14,6 +15,7 @@ const STATUS = {
   agendada: ['Confirmada', 'ok'],
   en_camino: ['La veterinaria va en camino 🚗', 'go'],
 };
+const DOC_STATUS = { por_firmar: ['✍️ Falta tu firma', 'go'], firmado: ['Firmado ✓', 'ok'], vencido: ['Enlace vencido', 'wait'] };
 const fmt = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('-') : '');
 
 export async function mountPetVet(box, pet) {
@@ -39,6 +41,10 @@ export async function mountPetVet(box, pet) {
       <form class="form vet-book" hidden>${bookForm(health.clinics)}</form>` : ''}
     ${current.length ? `<h3>Carnet de vacunas</h3><ul class="vet-list">${current.map((v) => `
       <li><strong>${esc(v.name)}</strong><small>Puesta ${fmt(v.appliedOn)} en ${esc(v.clinic)}${v.nextDue ? ` · próxima <b class="${v.nextDue < t ? 'late' : ''}">${fmt(v.nextDue)}</b>` : ''}</small></li>`).join('')}</ul>` : ''}
+    ${health.documents?.length ? `<h3>Documentos</h3><ul class="vet-list vet-docs">${health.documents.map((d) => `
+      <li><a href="#/doc/${d.token}"><strong>${esc(d.title)}</strong>
+      <small>${fmt(d.createdAt)} · ${esc(d.clinic)}</small>
+      ${DOC_STATUS[d.status] ? `<span class="vet-status ${DOC_STATUS[d.status][1]}">${DOC_STATUS[d.status][0]}</span>` : ''}</a></li>`).join('')}</ul>` : ''}
     ${health.clinics.length ? `<p class="small">Compartida con ${health.clinics.map((c) => `<strong>${esc(c.name)}</strong> <button class="link small" data-unlink="${c.id}">dejar de compartir</button>`).join(', ')}.</p>` : ''}
     <div class="vet-code">
       <p class="small">Muestra este código en tu veterinaria para que registre las vacunas y horas de ${esc(pet.name)} y te avise antes de cada dosis. Verán su nombre, tipo, raza y foto, y tu nombre, teléfono y correo. Sirve una vez y dura 24 horas.</p>

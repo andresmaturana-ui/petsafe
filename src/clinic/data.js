@@ -14,6 +14,7 @@ export const {
   saveReview, nearbyClinics, listBanners, saveBanner, deleteBanner, bannerClick, saveSpecialties, saveSchedule, busyElsewhere, availableSlots, publicClinic, guestRequestAppointment,
   createMunicipality, saveMuni, publicDrive, bookDrive, muniBoard, muniStats, comunaDrives, driveNotice,
   kiltrazoPoint, setPointUser, pointRegister,
+  voidDocument, documentByToken, signDocument,
 } = B;
 
 /** ¿Es una municipalidad (Kiltrazo Municipal) y no una clínica? */
@@ -55,6 +56,11 @@ export const restorePatient = (id) => B.update('clinic_patients', id, { removedA
 
 export const listVisits = (patientId) => B.list('clinic_visits', { patientId }, { order: 'visitedAt', desc: true });
 export const saveVisit = ({ id, ...v }) => (id ? B.update('clinic_visits', id, v) : B.insert('clinic_visits', v));
+
+// ---------- Documentos y consentimientos ----------
+
+export const listDocuments = (patientId) => B.list('clinic_documents', { patientId }, { order: 'createdAt', desc: true });
+export const createDocument = (d) => B.insert('clinic_documents', d);
 
 // ---------- Vacunas ----------
 
