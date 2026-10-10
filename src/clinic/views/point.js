@@ -72,7 +72,7 @@ export default function point(el, _params, { clinic, me }) {
       const btn = form.querySelector('button.primary');
       btn.disabled = true;
       try {
-        const p = { name: f.name.trim(), species: f.species, breed: f.breed.trim(), photo: shot.photo, scan: shot.biometric, tutorName: f.tutorName.trim(), tutorPhone: f.tutorPhone.trim() };
+        const p = { name: f.name.trim(), species: f.species, breed: f.breed.trim(), photo: shot.photo, scan: shot.biometric, trainCrops: shot.crops, tutorName: f.tutorName.trim(), tutorPhone: f.tutorPhone.trim() };
         const { id, code } = await pointRegister(clinic.id, p);
         await give({ ...p, id }, code);
       } catch (err) {

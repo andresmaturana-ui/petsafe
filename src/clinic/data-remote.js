@@ -1,7 +1,7 @@
 // Kiltrazo Clínica en Supabase. Las reglas de quién ve qué están en
 // supabase/schema.sql (sección "Kiltrazo Clínica"): cada clínica ve solo lo suyo.
 
-import { sb } from '../data-remote.js';
+import { sb, saveTrainingPhotos } from '../data-remote.js';
 
 const BUCKET = 'clinica';
 
@@ -124,7 +124,7 @@ export const kiltrazoPoint = () => run(sb().rpc('kiltrazo_point'));
 export const setPointUser = (userId, on) => run(sb().rpc('admin_set_point', { p_user: userId, p_on: on }));
 /** Punto de reconocimiento facial: crea la ficha y el enlace para el dueño. Devuelve { id, code }. */
 export const pointRegister = (clinicId, p) => run(sb().rpc('point_register', {
-  p_clinic: clinicId, p_name: p.name, p_species: p.species, p_photo: p.photo, p_scan: p.scan, p_tutor_name: p.tutorName, p_tutor_phone: p.tutorPhone, p_breed: p.breed || '',
+  p_clinic: clinicId, p_name: p.name, p_species: p.species, p_photo: p.photo, p_scan: p.scan, p_tutor_name: p.tutorName, p_tutor_phone: p.tutorPhone, p_breed: p.breed || '', p_train_crops: p.trainCrops || null,
 }));
 
 // ---------- Mascotas de Kiltrazo ----------
@@ -238,6 +238,12 @@ export async function acceptTransfer(code) {
 
 export async function claimTransfer(code, petId) {
   return run(sb().rpc('claim_transfer', { p_code: code, p_pet: petId }));
+}
+
+/** Fotos del punto para entrenar: se guardan si el dueño marcó la casilla, si no se borran. */
+export async function keepTrainCrops(petId, keep) {
+  const crops = await run(sb().rpc('take_train_crops', { p_pet: petId, p_keep: keep }));
+  if (crops) await saveTrainingPhotos(petId, crops);
 }
 
 // ---------- Mapa de clínicas (urgencias) ----------

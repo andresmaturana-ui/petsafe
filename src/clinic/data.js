@@ -13,7 +13,7 @@ export const {
   requestAppointment, alertEmergency, cancelMyAppointment, myAppointment, confirmMyAppointment, notifyAppointment, createTransferCode, transferInfo, claimTransfer, acceptTransfer,
   saveReview, nearbyClinics, listBanners, saveBanner, deleteBanner, bannerClick, saveSpecialties, saveSchedule, busyElsewhere, availableSlots, publicClinic, guestRequestAppointment,
   createMunicipality, saveMuni, publicDrive, bookDrive, muniBoard, muniStats, comunaDrives, driveNotice,
-  kiltrazoPoint, setPointUser, pointRegister,
+  kiltrazoPoint, setPointUser, pointRegister, keepTrainCrops,
   voidDocument, documentByToken, signDocument,
 } = B;
 

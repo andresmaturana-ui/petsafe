@@ -60,6 +60,12 @@ export async function registerPet(owner, { name, species = '', breed = '', owner
   });
 }
 
+/** Fotos para entrenar de una mascota que ya existe (las que vienen del punto). */
+export async function saveTrainingPhotos(petId, crops) {
+  const pet = await db.get('pets', petId);
+  if (pet) await db.put('pets', { ...pet, trainOk: true, trainAt: now(), trainCrops: crops, trainPhotos: crops.face.length + crops.nose.length });
+}
+
 export async function myPets(user) {
   return (await db.all('pets')).filter((p) => p.ownerId === user.id);
 }

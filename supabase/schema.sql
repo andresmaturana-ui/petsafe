@@ -2991,11 +2991,15 @@ create policy "veo dónde soy punto" on public.clinics for select
   using (exists (select 1 from clinic_members m where m.clinic_id = clinics.id and m.user_id = auth.uid()));
 
 -- Registrar una mascota en el punto y crear su enlace para el dueño.
--- (2026-10-10: ahora también guarda la raza; se borra la versión sin raza.)
+-- (2026-10-10: guarda la raza y las fotos de la cara del escaneo. Las fotos
+-- esperan a que el dueño la reciba: se quedan solo si él marca la casilla
+-- para mejorar el reconocimiento; si no, o si no la recibe en unos días, se borran.)
+alter table public.clinic_patients add column if not exists train_crops jsonb;
 drop function if exists public.point_register(uuid, text, text, text, jsonb, text, text);
+drop function if exists public.point_register(uuid, text, text, text, jsonb, text, text, text);
 create or replace function public.point_register(
   p_clinic uuid, p_name text, p_species text, p_photo text, p_scan jsonb, p_tutor_name text, p_tutor_phone text,
-  p_breed text default ''
+  p_breed text default '', p_train_crops jsonb default null
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare p uuid; c text;
@@ -3005,9 +3009,12 @@ begin
   end if;
   if coalesce(trim(p_name), '') = '' then raise exception 'Falta el nombre de la mascota'; end if;
   if p_scan is null then raise exception 'Falta filmar su cara'; end if;
-  insert into clinic_patients (clinic_id, name, species, breed, photo, scan, tutor_name, tutor_phone)
+  update clinic_patients set train_crops = null
+  where train_crops is not null and created_at < now() - interval '8 days';
+  insert into clinic_patients (clinic_id, name, species, breed, photo, scan, tutor_name, tutor_phone, train_crops)
   values (p_clinic, left(trim(p_name), 80), coalesce(p_species, ''), left(coalesce(trim(p_breed), ''), 80), p_photo, p_scan,
-          left(coalesce(trim(p_tutor_name), ''), 80), left(coalesce(trim(p_tutor_phone), ''), 30))
+          left(coalesce(trim(p_tutor_name), ''), 80), left(coalesce(trim(p_tutor_phone), ''), 30),
+          case when jsonb_typeof(p_train_crops) = 'object' and length(p_train_crops::text) < 3000000 then p_train_crops end)
   returning id into p;
   loop
     c := short_code(8);
@@ -3016,7 +3023,33 @@ begin
   insert into clinic_transfers (code, patient_id, clinic_id) values (c, p, p_clinic);
   return jsonb_build_object('id', p, 'code', c);
 end $$;
-grant execute on function public.point_register(uuid, text, text, text, jsonb, text, text, text) to authenticated;
+grant execute on function public.point_register(uuid, text, text, text, jsonb, text, text, text, jsonb) to authenticated;
+
+-- Lo que ve el dueño antes de recibirla (ahora dice si hay fotos del punto).
+create or replace function public.transfer_info(p_code text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('clinic', c.name, 'name', cp.name, 'species', cp.species, 'breed', cp.breed, 'photo', cp.photo,
+    'has_scan', cp.scan is not null, 'kind', c.kind, 'has_train', cp.train_crops is not null)
+  from clinic_transfers t join clinic_patients cp on cp.id = t.patient_id join clinics c on c.id = t.clinic_id
+  where t.code = upper(trim(p_code)) and t.created_at > now() - interval '7 days' and cp.pet_id is null
+    and auth.uid() is not null;
+$$;
+
+-- El dueño ya recibió su mascota: si marcó la casilla se le devuelven las
+-- fotos para subirlas a "entrenamiento"; en ambos casos se borran de aquí.
+create or replace function public.take_train_crops(p_pet uuid, p_keep boolean) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r jsonb;
+begin
+  if not exists (select 1 from pets where id = p_pet and owner_id = auth.uid()) then raise exception 'Mascota no encontrada'; end if;
+  with old as (
+    select id, train_crops from clinic_patients where pet_id = p_pet and train_crops is not null limit 1 for update
+  )
+  update clinic_patients cp set train_crops = null from old where cp.id = old.id returning old.train_crops into r;
+  update clinic_patients set train_crops = null where pet_id = p_pet and train_crops is not null;
+  return case when p_keep then r end;
+end $$;
+grant execute on function public.take_train_crops(uuid, boolean) to authenticated;
 
 -- ---------- Estudio de ganado (2026-10-09) ----------
 -- Prueba para saber si el reconocimiento facial sirve con vacas y caballos.
