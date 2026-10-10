@@ -30,16 +30,16 @@ export default function start(el, { session, refresh, pendingCode, muni = false 
     el.innerHTML = `
       <div class="ck-start">${intro}
         <div class="ck-start-cols">
-          <div class="card"><h2>Ya tengo cuenta</h2><div id="ck-login"></div></div>
           <div class="card">
-            <h2>Soy nuevo</h2>
-            <p class="muted small">Con este correo y clave entras desde cualquier computador o celular de la ${muni ? 'municipalidad' : 'clínica'}.</p>
+            <h2>Crear mi ${muni ? 'municipalidad' : 'clínica'}</h2>
+            <p class="muted small">Primero crea tu correo y clave: con ellos entras desde cualquier computador o celular de la ${muni ? 'municipalidad' : 'clínica'}. En el paso siguiente llenas sus datos.</p>
             <form class="form" id="ck-signup">
               <label>Correo<input name="email" type="email" required autocomplete="email"></label>
               <label>Crea una clave<input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
-              <button class="btn primary">Crear cuenta</button>
+              <button class="btn primary">Seguir</button>
             </form>
           </div>
+          <div class="card"><h2>Ya tengo cuenta</h2><div id="ck-login"></div></div>
         </div>
       </div>`;
     mountEmailLogin(el.querySelector('#ck-login'), { after: location.hash, onDone: refresh });
