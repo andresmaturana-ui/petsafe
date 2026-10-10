@@ -7,6 +7,7 @@ import { esc, toast } from '../../ui.js';
 import { pointRegister, isMuni } from '../data.js';
 import { waLink } from '../ui.js';
 import { brandWithLogo } from '../logo.js';
+import { breedOptions } from '../../breeds.js';
 
 const KINDS = [['perro', '🐶 Perro'], ['gato', '🐱 Gato'], ['otro', '🐾 Otro']];
 
@@ -52,6 +53,8 @@ export default function point(el, _params, { clinic, me }) {
         <div class="ck-point-kinds" role="radiogroup" aria-label="Especie">
           ${KINDS.map(([v, t], i) => `<label class="spec-chip"><input type="radio" name="species" value="${v}" ${i ? '' : 'checked'}><span>${t}</span></label>`).join('')}
         </div>
+        <label>Raza<input name="breed" list="ck-point-breeds" maxlength="80" autocomplete="off" placeholder="Ej.: Mestizo (quiltro), Labrador o Siamés"></label>
+        <datalist id="ck-point-breeds">${breedOptions('perro')}</datalist>
         <label>Nombre del ${owner}<input name="tutorName" maxlength="80" autocomplete="off" placeholder="Ej.: Camila Rojas"></label>
         <label>Celular del ${owner} (WhatsApp)<input name="tutorPhone" type="tel" autocomplete="off" placeholder="+56 9 1234 5678"></label>
         <button class="btn primary big">Guardar y entregar</button>
@@ -60,13 +63,16 @@ export default function point(el, _params, { clinic, me }) {
     const form = el.querySelector('#ck-point-form');
     form.name.focus();
     el.querySelector('#ck-point-again').addEventListener('click', film);
+    form.querySelector('.ck-point-kinds').addEventListener('change', () => {
+      el.querySelector('#ck-point-breeds').innerHTML = breedOptions(form.species.value);
+    });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = Object.fromEntries(new FormData(form));
       const btn = form.querySelector('button.primary');
       btn.disabled = true;
       try {
-        const p = { name: f.name.trim(), species: f.species, photo: shot.photo, scan: shot.biometric, tutorName: f.tutorName.trim(), tutorPhone: f.tutorPhone.trim() };
+        const p = { name: f.name.trim(), species: f.species, breed: f.breed.trim(), photo: shot.photo, scan: shot.biometric, tutorName: f.tutorName.trim(), tutorPhone: f.tutorPhone.trim() };
         const { id, code } = await pointRegister(clinic.id, p);
         await give({ ...p, id }, code);
       } catch (err) {

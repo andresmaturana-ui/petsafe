@@ -2991,8 +2991,11 @@ create policy "veo dónde soy punto" on public.clinics for select
   using (exists (select 1 from clinic_members m where m.clinic_id = clinics.id and m.user_id = auth.uid()));
 
 -- Registrar una mascota en el punto y crear su enlace para el dueño.
+-- (2026-10-10: ahora también guarda la raza; se borra la versión sin raza.)
+drop function if exists public.point_register(uuid, text, text, text, jsonb, text, text);
 create or replace function public.point_register(
-  p_clinic uuid, p_name text, p_species text, p_photo text, p_scan jsonb, p_tutor_name text, p_tutor_phone text
+  p_clinic uuid, p_name text, p_species text, p_photo text, p_scan jsonb, p_tutor_name text, p_tutor_phone text,
+  p_breed text default ''
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare p uuid; c text;
@@ -3002,8 +3005,8 @@ begin
   end if;
   if coalesce(trim(p_name), '') = '' then raise exception 'Falta el nombre de la mascota'; end if;
   if p_scan is null then raise exception 'Falta filmar su cara'; end if;
-  insert into clinic_patients (clinic_id, name, species, photo, scan, tutor_name, tutor_phone)
-  values (p_clinic, left(trim(p_name), 80), coalesce(p_species, ''), p_photo, p_scan,
+  insert into clinic_patients (clinic_id, name, species, breed, photo, scan, tutor_name, tutor_phone)
+  values (p_clinic, left(trim(p_name), 80), coalesce(p_species, ''), left(coalesce(trim(p_breed), ''), 80), p_photo, p_scan,
           left(coalesce(trim(p_tutor_name), ''), 80), left(coalesce(trim(p_tutor_phone), ''), 30))
   returning id into p;
   loop
@@ -3013,7 +3016,7 @@ begin
   insert into clinic_transfers (code, patient_id, clinic_id) values (c, p, p_clinic);
   return jsonb_build_object('id', p, 'code', c);
 end $$;
-grant execute on function public.point_register(uuid, text, text, text, jsonb, text, text) to authenticated;
+grant execute on function public.point_register(uuid, text, text, text, jsonb, text, text, text) to authenticated;
 
 -- ---------- Estudio de ganado (2026-10-09) ----------
 -- Prueba para saber si el reconocimiento facial sirve con vacas y caballos.

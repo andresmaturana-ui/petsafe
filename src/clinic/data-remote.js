@@ -124,7 +124,7 @@ export const kiltrazoPoint = () => run(sb().rpc('kiltrazo_point'));
 export const setPointUser = (userId, on) => run(sb().rpc('admin_set_point', { p_user: userId, p_on: on }));
 /** Punto de reconocimiento facial: crea la ficha y el enlace para el dueño. Devuelve { id, code }. */
 export const pointRegister = (clinicId, p) => run(sb().rpc('point_register', {
-  p_clinic: clinicId, p_name: p.name, p_species: p.species, p_photo: p.photo, p_scan: p.scan, p_tutor_name: p.tutorName, p_tutor_phone: p.tutorPhone,
+  p_clinic: clinicId, p_name: p.name, p_species: p.species, p_photo: p.photo, p_scan: p.scan, p_tutor_name: p.tutorName, p_tutor_phone: p.tutorPhone, p_breed: p.breed || '',
 }));
 
 // ---------- Mascotas de Kiltrazo ----------
